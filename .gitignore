@@ -1,0 +1,56 @@
+# Unity project .gitignore
+
+# OS & editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.orig
+
+# Unity generated folders
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+
+# Unity cache/artifacts
+MemoryCaptures/
+Recordings/
+
+# Auto-generated files
+/.vs/
+*.pid
+*.rsp
+*.asmdef
+*.csproj
+*.sln
+*.user
+*.unityproj
+*.booproj
+
+# Package Manager
+Packages/packages-lock.json
+
+# Addressables & asset bundles
+Assets/StreamingAssets/aa/
+
+# Crash reports
+*.dmp
+
+# Rider/VSCode
+.idea/
+.vscode/
+
+# Builds
+*.apk
+*.aab
+*.ipa
+*.exe
+*.app
+*.zip
+
+# Ignore all meta? No — Unity needs .meta files tracked. Keep them.
+# If you really want to ignore some, do so selectively.

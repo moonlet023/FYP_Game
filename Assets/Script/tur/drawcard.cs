@@ -1,0 +1,482 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class drawcard : MonoBehaviour
+{
+    public GameObject cardprefab;
+    // 指定抽到的卡片要放置的父容器（如：手牌區域或某個面板）
+    public Transform cardContainer;
+    // 僅在內容寬度超過視窗寬度時啟用滾輪移動
+    public bool wheelOnlyWhenOverflow = true;
+    // 用於估算卡片寬度與間距（在無 LayoutElement/Group 時）
+    public float approximateCardWidth = 120f;
+    public float approximateSpacing = 10f;
+    // 動畫起點：例如牌堆物件或某個圖標
+    public Transform sourceAnchor;
+    // 自動啟用滾動的卡片數量門檻
+    public int autoEnableScrollThreshold = 10;
+    // 是否為 UI 放置（RectTransform），若為 UI 則使用本地座標與錨點
+    public bool isUIPlacement = false;
+    // 生成時的隨機偏移範圍，用於輕微錯位避免完全重疊
+    public Vector2 spawnJitter = new Vector2(20f, 0f);
+    // 置中向左右延展（中心展開）
+    public bool spreadFromCenter = true;
+    // 中心展開的水平間距（UI為像素、世界為單位）
+    public float centerSpacing = 80f;
+    // 啟用簡單生成動畫（滑入）
+    public bool enableAnimation = true;
+    public float animateDuration = 0.35f;
+    // UI 模式下，進場的初始偏移（從左側滑入）
+    public Vector2 uiEnterOffset = new Vector2(-200f, 0f);
+    // 世界模式下，進場的初始偏移（從左側滑入）
+    public Vector3 worldEnterOffset = new Vector3(-2f, 0f, 0f);
+    public int num;
+    // 滾動支援（僅 UI）
+    public bool enableScroll = true;
+    public ScrollRect scrollRect; // 可直接指派；若為空，會嘗試在父層尋找
+    // 無 ScrollRect 時使用滑鼠滾輪捲動內容
+    public bool enableWheelScrollWithoutScrollRect = true;
+    public float wheelScrollSpeed = 200f; // 每單位滾輪移動的像素偏移
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        // 依卡片數量決定是否啟用滾動
+        UpdateScrollEnableBasedOnCount();
+        // 僅在已指派 ScrollRect 並啟用時執行配置，避免自動加上造成遮蔽
+        if (isUIPlacement && enableScroll && scrollRect != null)
+        {
+            EnsureScrollSetup();
+        }
+        Topdrawnum(num);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        HandleWheelScrollIfNeeded();
+    }
+
+    public void Topdrawnum(int num)
+    {
+        for (int i = 0; i < num; i++)
+        {
+            SpawnCardAtSuitableArea();
+        }
+    }
+
+    public void Topdraw7()
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            SpawnCardAtSuitableArea();
+        }
+    }
+
+    public void Drawone()
+    {
+        SpawnCardAtSuitableArea();
+    }
+
+    private void SpawnCardAtSuitableArea()
+    {
+        if (cardprefab == null)
+        {
+            Debug.LogError("cardprefab 未指派，請在 Inspector 設定卡片預製體。");
+            return;
+        }
+
+        // 若未指定容器，退回至原本世界座標隨機位置的做法
+        if (cardContainer == null)
+        {
+            var worldPos = new Vector3(Random.Range(-4f, 4f), Random.Range(-4f, 4f), 0f);
+            Instantiate(cardprefab, worldPos, Quaternion.identity);
+            return;
+        }
+
+        // 於指定容器內生成
+        var go = Instantiate(cardprefab);
+        go.transform.SetParent(cardContainer, worldPositionStays: false);
+
+        if (isUIPlacement)
+        {
+            // UI 模式：使用 RectTransform 放置到容器中，採水平排列微小偏移
+            var rt = go.GetComponent<RectTransform>();
+            if (rt == null)
+            {
+                rt = go.AddComponent<RectTransform>();
+            }
+            // 若父容器有水平布局，交由 LayoutGroup 排列
+            var hlg = cardContainer.GetComponent<HorizontalLayoutGroup>();
+            if (hlg != null)
+            {
+                // 設定伸展以符合布局，需要時可讓 prefab 上的 LayoutElement 控制大小
+                rt.anchorMin = new Vector2(0f, 0.5f);
+                rt.anchorMax = new Vector2(0f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                // 初始位置設定為布局預設位置（0），避免與布局衝突
+                if (enableAnimation)
+                {
+                    Vector2 startPos;
+                    if (sourceAnchor != null)
+                    {
+                        // 將世界座標的 sourceAnchor 轉為容器的本地 UI 座標
+                        Vector2 localPoint;
+                        RectTransform containerRT = cardContainer as RectTransform;
+                        if (containerRT != null)
+                        {
+                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(Camera.main, sourceAnchor.position);
+                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, Camera.main, out localPoint);
+                            startPos = localPoint;
+                        }
+                        else
+                        {
+                            startPos = uiEnterOffset; // 後備
+                        }
+                    }
+                    else
+                    {
+                        startPos = rt.anchoredPosition + uiEnterOffset;
+                    }
+                    var endPos = Vector2.zero;
+                    rt.anchoredPosition = startPos;
+                    StartCoroutine(AnimateUIPosition(rt, endPos, animateDuration));
+                }
+                else
+                {
+                    rt.anchoredPosition = Vector2.zero;
+                }
+            }
+            else
+            {
+                // 無布局：使用錨點與輕微偏移
+                rt.anchorMin = new Vector2(0f, 0.5f);
+                rt.anchorMax = new Vector2(0f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                Vector2 targetPos;
+                if (spreadFromCenter)
+                {
+                    // 依目前子物件數量，從中心往左右展開
+                    int n = cardContainer.childCount;
+                    // 計算索引（新加入為最後一個）
+                    int i = n - 1;
+                    float centerIndex = (n - 1) * 0.5f;
+                    float x = (i - centerIndex) * centerSpacing;
+                    targetPos = new Vector2(x, 0f);
+                }
+                else
+                {
+                    var offsetX = Random.Range(-spawnJitter.x, spawnJitter.x);
+                    var offsetY = Random.Range(-spawnJitter.y, spawnJitter.y);
+                    targetPos = new Vector2(offsetX, offsetY);
+                }
+                if (enableAnimation)
+                {
+                    if (sourceAnchor != null)
+                    {
+                        Vector2 localPoint;
+                        RectTransform containerRT = cardContainer as RectTransform;
+                        if (containerRT != null)
+                        {
+                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(Camera.main, sourceAnchor.position);
+                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, Camera.main, out localPoint);
+                            rt.anchoredPosition = localPoint;
+                        }
+                        else
+                        {
+                            rt.anchoredPosition = uiEnterOffset;
+                        }
+                    }
+                    else
+                    {
+                        rt.anchoredPosition = uiEnterOffset;
+                    }
+                    StartCoroutine(AnimateUIPosition(rt, targetPos, animateDuration));
+                }
+                else
+                {
+                    rt.anchoredPosition = targetPos;
+                }
+                // 重新整理所有卡片的位置達到左右延展的效果
+                if (spreadFromCenter)
+                {
+                    ReflowHandUI();
+                }
+            }
+        }
+        else
+        {
+            // 世界座標模式：在容器局部座標內給予隨機偏移
+            Vector3 targetLocal;
+            if (spreadFromCenter)
+            {
+                int n = cardContainer.childCount;
+                int i = n - 1;
+                float centerIndex = (n - 1) * 0.5f;
+                float x = (i - centerIndex) * centerSpacing;
+                targetLocal = new Vector3(x, 0f, 0f);
+            }
+            else
+            {
+                var offsetX = Random.Range(-spawnJitter.x, spawnJitter.x);
+                var offsetY = Random.Range(-spawnJitter.y, spawnJitter.y);
+                targetLocal = go.transform.localPosition + new Vector3(offsetX, offsetY, 0f);
+            }
+            if (enableAnimation)
+            {
+                if (sourceAnchor != null)
+                {
+                    // 轉換世界座標到容器的局部座標
+                    var startLocal = cardContainer.InverseTransformPoint(sourceAnchor.position);
+                    go.transform.localPosition = startLocal;
+                }
+                else
+                {
+                    go.transform.localPosition = targetLocal + worldEnterOffset;
+                }
+                StartCoroutine(AnimateWorldPosition(go.transform, targetLocal, animateDuration));
+            }
+            else
+            {
+                go.transform.localPosition = targetLocal;
+            }
+            if (spreadFromCenter)
+            {
+                ReflowHandWorld();
+            }
+        }
+        // 每次生成後檢查是否需要啟用滾動
+        UpdateScrollEnableBasedOnCount();
+        HandleWheelScrollIfNeeded();
+    }
+
+    // 當卡片數量超過 10，自動啟用滾動（僅 UI）
+    private void UpdateScrollEnableBasedOnCount()
+    {
+        if (!isUIPlacement) return;
+        int count = cardContainer != null ? cardContainer.childCount : 0;
+        bool shouldEnable = count > autoEnableScrollThreshold;
+        enableScroll = shouldEnable;
+        // 若有 ScrollRect 且剛變為啟用，做一次配置
+        if (shouldEnable && scrollRect != null)
+        {
+            EnsureScrollSetup();
+        }
+    }
+
+    private void HandleWheelScrollIfNeeded()
+    {
+        // 簡易滑鼠滾輪捲動（無 ScrollRect）且 UI 模式
+        if (!(isUIPlacement && enableWheelScrollWithoutScrollRect && scrollRect == null && cardContainer is RectTransform))
+            return;
+
+        var contentRT = cardContainer as RectTransform;
+        var viewportRT = contentRT.parent as RectTransform;
+        if (viewportRT == null)
+        {
+            // 沒有父 RectTransform 當作視窗，直接允許移動但不做邊界檢查
+            var deltaNoViewport = Input.mouseScrollDelta.y;
+            if (Mathf.Abs(deltaNoViewport) > 0.0001f)
+            {
+                var move = -deltaNoViewport * wheelScrollSpeed * Time.deltaTime;
+                contentRT.anchoredPosition += new Vector2(move, 0f);
+            }
+            return;
+        }
+
+        // 計算內容寬度
+        float contentWidth = GetContentWidthApprox(contentRT);
+        float viewportWidth = viewportRT.rect.width;
+
+        // 僅在溢出時才允許捲動
+        if (wheelOnlyWhenOverflow && contentWidth <= viewportWidth + 1f)
+            return;
+
+        var delta = Input.mouseScrollDelta.y; // 正值為向上捲動
+        if (Mathf.Abs(delta) > 0.0001f)
+        {
+            var move = -delta * wheelScrollSpeed * Time.deltaTime;
+            var pos = contentRT.anchoredPosition;
+            pos.x += move;
+
+            // 邊界限制：內容不可超出左右界
+            float maxOffsetRight = 0f; // 左邊不留空
+            float maxOffsetLeft = Mathf.Max(0f, contentWidth - viewportWidth); // 可向左捲動的最大距離
+            pos.x = Mathf.Clamp(pos.x, -maxOffsetLeft, maxOffsetRight);
+
+            contentRT.anchoredPosition = pos;
+        }
+    }
+
+    private float GetContentWidthApprox(RectTransform contentRT)
+    {
+        // 若有 HorizontalLayoutGroup，利用子項估算
+        var hlg = contentRT.GetComponent<HorizontalLayoutGroup>();
+        if (hlg != null)
+        {
+            float total = 0f;
+            int n = contentRT.childCount;
+            for (int i = 0; i < n; i++)
+            {
+                var child = contentRT.GetChild(i) as RectTransform;
+                if (child == null) continue;
+                var le = child.GetComponent<LayoutElement>();
+                float w = le != null && le.preferredWidth > 0 ? le.preferredWidth : child.rect.width;
+                total += w;
+                if (i > 0) total += hlg.spacing;
+            }
+            // 內距
+            total += hlg.padding.left + hlg.padding.right;
+            return Mathf.Max(total, contentRT.rect.width);
+        }
+
+        // 無佈局：用估算值
+        int count = contentRT.childCount;
+        float approx = count * approximateCardWidth + Mathf.Max(0, count - 1) * approximateSpacing;
+        return Mathf.Max(approx, contentRT.rect.width);
+    }
+
+    // ---------------- 滾動設定（UI） ----------------
+    private void EnsureScrollSetup()
+    {
+        var contentRT = cardContainer as RectTransform;
+        if (contentRT == null)
+        {
+            Debug.LogWarning("啟用滾動需要 UI 模式（RectTransform）作為內容容器。");
+            return;
+        }
+
+        // 找 ScrollRect：若未指派，往父層尋找
+        if (scrollRect == null)
+        {
+            scrollRect = GetComponentInParent<ScrollRect>();
+        }
+
+        // 若仍沒有，則嘗試在 cardContainer 的父物件上建立一個基本的 ScrollRect 結構
+        if (scrollRect == null)
+        {
+            var parentGO = contentRT.parent != null ? contentRT.parent.gameObject : null;
+            if (parentGO != null)
+            {
+                scrollRect = parentGO.GetComponent<ScrollRect>();
+                if (scrollRect == null)
+                {
+                    scrollRect = parentGO.AddComponent<ScrollRect>();
+                }
+            }
+        }
+
+        if (scrollRect == null)
+        {
+            Debug.LogWarning("未找到或建立 ScrollRect，將改用滑鼠滾輪無視窗捲動模式。");
+            return;
+        }
+
+        // 設定 ScrollRect 為水平滾動；將 content 指到 cardContainer
+        scrollRect.horizontal = true;
+        scrollRect.vertical = false;
+        scrollRect.content = contentRT;
+
+        // 確保 Viewport 存在（若有 Mask 或 Image 作為裁切）
+        if (scrollRect.viewport == null)
+        {
+            var viewportRT = scrollRect.GetComponent<RectTransform>();
+            scrollRect.viewport = viewportRT; // 使用 ScrollRect 的 RectTransform 當作 viewport
+        }
+
+        // 在內容上添加/確保布局與自動尺寸
+        var hlg = contentRT.GetComponent<HorizontalLayoutGroup>();
+        if (hlg == null)
+        {
+            hlg = contentRT.gameObject.AddComponent<HorizontalLayoutGroup>();
+            hlg.childAlignment = TextAnchor.MiddleLeft;
+            hlg.spacing = Mathf.Max(hlg.spacing, 10f);
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = false;
+        }
+
+        var csf = contentRT.GetComponent<ContentSizeFitter>();
+        if (csf == null)
+        {
+            csf = contentRT.gameObject.AddComponent<ContentSizeFitter>();
+        }
+        csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        csf.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+    }
+
+    private void ReflowHandUI()
+    {
+        var containerRT = cardContainer as RectTransform;
+        if (containerRT == null) return;
+        int n = cardContainer.childCount;
+        float centerIndex = (n - 1) * 0.5f;
+        for (int i = 0; i < n; i++)
+        {
+            var child = cardContainer.GetChild(i) as RectTransform;
+            if (child == null) continue;
+            var hlg = cardContainer.GetComponent<HorizontalLayoutGroup>();
+            if (hlg != null) break; // 若使用 LayoutGroup，避免手動排位
+            Vector2 target = new Vector2((i - centerIndex) * centerSpacing, 0f);
+            if (enableAnimation)
+            {
+                StartCoroutine(AnimateUIPosition(child, target, animateDuration));
+            }
+            else
+            {
+                child.anchoredPosition = target;
+            }
+        }
+    }
+
+    private void ReflowHandWorld()
+    {
+        int n = cardContainer.childCount;
+        float centerIndex = (n - 1) * 0.5f;
+        var hlg = cardContainer.GetComponent<HorizontalLayoutGroup>();
+        if (hlg != null) return;
+        for (int i = 0; i < n; i++)
+        {
+            var child = cardContainer.GetChild(i);
+            if (child == null) continue;
+            Vector3 target = new Vector3((i - centerIndex) * centerSpacing, 0f, 0f);
+            if (enableAnimation)
+            {
+                StartCoroutine(AnimateWorldPosition(child, target, animateDuration));
+            }
+            else
+            {
+                child.localPosition = target;
+            }
+        }
+    }
+
+    private IEnumerator AnimateUIPosition(RectTransform rt, Vector2 target, float duration)
+    {
+        float t = 0f;
+        Vector2 start = rt.anchoredPosition;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / duration);
+            rt.anchoredPosition = Vector2.Lerp(start, target, k);
+            yield return null;
+        }
+        rt.anchoredPosition = target;
+    }
+
+    private IEnumerator AnimateWorldPosition(Transform tr, Vector3 target, float duration)
+    {
+        float t = 0f;
+        Vector3 start = tr.localPosition;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / duration);
+            tr.localPosition = Vector3.Lerp(start, target, k);
+            yield return null;
+        }
+        tr.localPosition = target;
+    }
+}

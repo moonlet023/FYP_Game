@@ -10,12 +10,17 @@ public class LoginUIManager : MonoBehaviour
     public Button loginButton;
     public Button registerButton;
     public Text statusText;
+    public RawImage serverStatusIndicator;
     
     [Header("API 客戶端")]
     public LoginApiClient apiClient;
     
     void Start()
     {
+        serverStatusIndicator.gameObject.SetActive(false);
+
+        TestConnection();
+
         // 設定按鈕事件
         loginButton.onClick.AddListener(OnLoginButtonClicked);
         registerButton.onClick.AddListener(OnRegisterButtonClicked);
@@ -176,14 +181,33 @@ public class LoginUIManager : MonoBehaviour
         // 可以添加一個測試端點來檢查伺服器連接
         // 或者嘗試獲取一個不存在的使用者來測試 API
         apiClient.GetPlayerData("test_connection", (result) => {
-            if (result == null)
+            try
             {
-                SetStatusText("✅ 伺服器連接正常");
+                // 若回傳 null，視為連線或查詢失敗
+                if (result == null)
+                {
+                    SetStatusText("❌ 伺服器連接異常");
+                    OnServerConnectionFailed();
+                }
+                else
+                {
+                    SetStatusText("✅ 伺服器連接正常");
+                }
             }
-            else
+            catch (System.Exception ex)
             {
+                Debug.LogError($"測試連接時發生例外: {ex.Message}");
                 SetStatusText("❌ 伺服器連接異常");
+                OnServerConnectionFailed();
             }
         });
+    }
+
+    //若鏈接伺服器失敗 則游戲畫面轉為維護中
+    public void OnServerConnectionFailed()
+    {
+        // 更新狀態文字
+        SetStatusText("❌ 伺服器連接失敗，系統維護中");
+        serverStatusIndicator.gameObject.SetActive(true);
     }
 }
