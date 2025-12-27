@@ -3,175 +3,174 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-// 將此腳本掛在「顯示區域管理」物件或任何常駐管理者上
-// 功能：當卡片（UI 物件）與任一顯示區 RawImage 的矩形區域重疊時，將卡片貼齊到該顯示區並（可選）停用拖曳。
+// 將此腳本掛在管理物件上：當卡片位置與任一顯示區位置相同（含閾值）時，刪除原卡並在該區生成顯示卡片 Prefab。
 public class placecard : MonoBehaviour
 {
-    [Header("Card instance to monitor")]
-    public GameObject card; // 場景中的卡片實例（非 prefab）。
+    [Header("Areas & Card")]
+    public RawImage[] displayArea;      // 可放置的顯示區（UI）
+    public GameObject card;             // 當前檢測的單一卡片（UI 或世界物件）
 
-    [Header("Display Areas (UI RawImage)")]
-    public RawImage[] displayAreas; // 可指定一個或多個顯示區 UI。
+    [Header("Dynamic Discovery (optional)")]
+    public bool autoFindCardsInContainer = true; // 自動在容器內檢測多張卡片
+    public Transform cardContainer;              // 卡片生成的父容器（例如手牌區域）
+    public bool autoFindCardsByTag = false;      // 若無容器，可用 Tag 搜尋
+    public string cardTag = "Card";              // 卡片的 Tag 名稱
 
-    [Header("Placement Options")]
-    public bool lockOnPlace = true;           // 放置後是否鎖定（停用拖曳）。
-    public Behaviour dragScriptToDisable;     // 指定負責拖曳的腳本（例如自訂的 Draggable），放置後會停用。
-    public bool centerInArea = true;          // 放置時置中顯示區。
-    public Transform snapPoint;               // 可選：若指定，放置時貼齊到此點（需在同 Canvas/座標系統下）。
+    [Header("Display Card Prefab")]
+    public GameObject displayCardPrefab; // 要放置的顯示卡片 Prefab（建議為 UI）
 
-    [Header("Place Card Prefab (optional)")]
-    public GameObject placeCardPrefab;        // 另一個用於放置時顯示的卡片 Prefab（UI）。
-    public bool usePlacePrefab = true;        // 若為真且有 prefab，放置時會 Instantiate 該 prefab；否則直接重設父物件使用原卡。
-    public bool hideSourceCardOnPlace = true; // 使用 Prefab 放置後是否隱藏原卡片（SetActive(false)）。
-    public GameObject placedInstance;         // 放置生成的實例（唯讀觀察用途）。
+    [Header("Match Settings")]
+    public float positionMatchThresholdPixels = 6f; // 位置相同的螢幕像素閾值（越小越嚴格）
+    public bool debugLogs = true;
 
-    private bool isPlaced = false;
-    [Header("Debug")]
-    public bool debugLogs = true;             // 顯示除錯資訊
+    void Start()
+    {
+        if (debugLogs)
+        {
+            int count = displayArea != null ? displayArea.Length : 0;
+            Debug.Log($"placecard: displayArea count={count}");
+            if (displayArea != null)
+            {
+                for (int i = 0; i < displayArea.Length; i++)
+                {
+                    var name = displayArea[i] != null ? displayArea[i].name : "<null>";
+                    Debug.Log($"placecard: area[{i}]={name}");
+                }
+            }
+        }
+    }
 
     void Update()
     {
-        if (isPlaced) return;
-        if (card == null) return;
-        if (displayAreas == null || displayAreas.Length == 0) return;
-
-        RectTransform cardRect = card.GetComponent<RectTransform>();
-        if (cardRect == null) return; // 僅支援 UI 卡片（需為 RectTransform）
-
-        // 檢查卡片是否與任一顯示區矩形重疊
-        foreach (var area in displayAreas)
+        if (debugLogs)
         {
-            if (area == null) continue;
-
-            RectTransform areaRect = area.GetComponent<RectTransform>();
-            if (areaRect == null) continue;
-
-            if (RectOverlaps(cardRect, areaRect))
-            {
-                PlaceCardIntoArea(cardRect, areaRect);
-                break;
-            }
+            int count = displayArea != null ? displayArea.Length : 0;
+            Debug.Log($"placecard: Update tick card={(card != null ? card.name : "<null>")} areas={count}");
         }
-    }
 
-    // 將卡片放置到指定顯示區
-    private void PlaceCardIntoArea(RectTransform cardRect, RectTransform areaRect)
-    {
-        if (usePlacePrefab && placeCardPrefab != null)
+        // 收集候選卡片：容器、Tag 或單一卡片
+        List<GameObject> candidates = new List<GameObject>();
+        if (autoFindCardsInContainer && cardContainer != null)
         {
-            // 使用外部 Prefab 生成放置卡片
-            placedInstance = Instantiate(placeCardPrefab, areaRect);
-            var placedRect = placedInstance.GetComponent<RectTransform>();
-            if (placedRect != null)
+            int childCount = cardContainer.childCount;
+            for (int i = 0; i < childCount; i++)
             {
-                if (snapPoint != null)
-                {
-                    Vector2 localPoint;
-                    var cam = areaRect.GetComponentInParent<Canvas>()?.worldCamera;
-                    RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        areaRect,
-                        RectTransformUtility.WorldToScreenPoint(cam, snapPoint.position),
-                        cam,
-                        out localPoint
-                    );
-                    placedRect.anchoredPosition = localPoint;
-                }
-                else if (centerInArea)
-                {
-                    placedRect.anchoredPosition = Vector2.zero;
-                }
+                var child = cardContainer.GetChild(i).gameObject;
+                candidates.Add(child);
             }
-            else
-            {
-                // 若 Prefab 不是 UI，退回 transform 置中
-                placedInstance.transform.localPosition = Vector3.zero;
-            }
-
-            if (hideSourceCardOnPlace && card != null)
-            {
-                card.SetActive(false);
-            }
+            if (debugLogs) Debug.Log($"placecard: found {candidates.Count} cards in container");
+        }
+        else if (autoFindCardsByTag)
+        {
+            var tagged = GameObject.FindGameObjectsWithTag(cardTag);
+            candidates.AddRange(tagged);
+            if (debugLogs) Debug.Log($"placecard: found {tagged.Length} cards by tag '{cardTag}'");
+        }
+        else if (card != null)
+        {
+            candidates.Add(card);
         }
         else
         {
-            // 直接使用原卡片：設定父物件以便 UI 對齊（不保留世界座標）
-            cardRect.SetParent(areaRect, worldPositionStays: false);
-
-            if (snapPoint != null)
-            {
-                Vector2 localPoint;
-                var cam = areaRect.GetComponentInParent<Canvas>()?.worldCamera;
-                RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    areaRect,
-                    RectTransformUtility.WorldToScreenPoint(cam, snapPoint.position),
-                    cam,
-                    out localPoint
-                );
-                cardRect.anchoredPosition = localPoint;
-            }
-            else if (centerInArea)
-            {
-                cardRect.anchoredPosition = Vector2.zero;
-            }
+            if (debugLogs) Debug.Log("placecard: skip, no candidates (card null & no auto-find)");
+            return;
         }
-
-        // 停用拖曳腳本（若已指定）
-        if (lockOnPlace && dragScriptToDisable != null)
+        if (displayArea == null || displayArea.Length == 0)
         {
-            dragScriptToDisable.enabled = false;
+            if (debugLogs) Debug.Log("placecard: skip, displayArea is null or empty");
+            return;
         }
 
-        isPlaced = true;
+        bool placedThisFrame = false;
+        foreach (var candidate in candidates)
+        {
+            if (candidate == null) continue;
+            var cardRT = candidate.GetComponent<RectTransform>();
+            Vector2 cardCenterScreen = GetCenterScreenPoint(cardRT, candidate.transform);
+            if (debugLogs) Debug.Log($"placecard: card '{candidate.name}' center screen={cardCenterScreen}");
+
+            for (int i = 0; i < displayArea.Length; i++)
+            {
+                var area = displayArea[i];
+                if (area == null) continue;
+                RectTransform areaRT = area.GetComponent<RectTransform>();
+                Vector2 areaCenterScreen = GetCenterScreenPoint(areaRT, area.transform);
+                if (debugLogs) Debug.Log($"placecard: area[{i}] center screen={areaCenterScreen}");
+
+                float dist = Vector2.Distance(cardCenterScreen, areaCenterScreen);
+                // 另補：卡片中心是否在顯示區矩形中
+                var canvas = area.GetComponentInParent<Canvas>();
+                var cam = canvas != null ? canvas.worldCamera : null; // Overlay 為 null
+                bool inside = false;
+                if (areaRT != null)
+                {
+                    inside = RectTransformUtility.RectangleContainsScreenPoint(areaRT, cardCenterScreen, cam);
+                }
+
+                if (debugLogs)
+                {
+                    Debug.Log($"placecard: check card='{candidate.name}' area[{i}] dist={dist:F2} inside={inside}");
+                }
+
+                if (dist <= positionMatchThresholdPixels || inside)
+                {
+                    if (debugLogs) Debug.Log($"placecard: MATCH card='{candidate.name}' -> area[{i}] dist={dist:F2} px");
+                    ReplaceWithDisplayCard(areaRT, cardRT, candidate);
+                    placedThisFrame = true;
+                    break;
+                }
+            }
+            if (placedThisFrame) break; // 一幀只處理一張卡
+        }
     }
 
-    // 判斷兩個 UI RectTransform 是否在世界座標下重疊
-    private bool RectOverlaps(RectTransform a, RectTransform b)
+    private Vector2 GetCenterScreenPoint(RectTransform rt, Transform tr)
     {
-        // 使用螢幕座標判斷角點/中心是否落在對方矩形中，適用 Overlay 與 Camera Canvas
-        var canvas = b.GetComponentInParent<Canvas>();
-        Camera cam = canvas != null ? canvas.worldCamera : null; // Overlay 為 null
-
-        var aCorners = new Vector3[4];
-        var bCorners = new Vector3[4];
-        a.GetWorldCorners(aCorners);
-        b.GetWorldCorners(bCorners);
-
-        // 將角點轉為螢幕座標
-        var aScreen = new Vector2[4];
-        var bScreen = new Vector2[4];
-        for (int i = 0; i < 4; i++)
+        // 若為 UI（RectTransform），以四角平均做中心；否則以 transform.position
+        var canvas = tr.GetComponentInParent<Canvas>();
+        var cam = canvas != null ? canvas.worldCamera : null; // Overlay 為 null
+        if (rt != null)
         {
-            aScreen[i] = RectTransformUtility.WorldToScreenPoint(cam, aCorners[i]);
-            bScreen[i] = RectTransformUtility.WorldToScreenPoint(cam, bCorners[i]);
+            var corners = new Vector3[4];
+            rt.GetWorldCorners(corners);
+            Vector3 centerWorld = (corners[0] + corners[2]) * 0.5f;
+            var screen = RectTransformUtility.WorldToScreenPoint(cam, centerWorld);
+            if (debugLogs) Debug.Log($"placecard: GetCenterScreenPoint UI centerWorld={centerWorld} screen={screen}");
+            return screen;
+        }
+        else
+        {
+            var screen = RectTransformUtility.WorldToScreenPoint(cam, tr.position);
+            if (debugLogs) Debug.Log($"placecard: GetCenterScreenPoint worldPos={tr.position} screen={screen}");
+            return screen;
+        }
+    }
+
+    private void ReplaceWithDisplayCard(RectTransform areaRT, RectTransform cardRT, GameObject cardGO)
+    {
+        if (displayCardPrefab == null)
+        {
+            Debug.LogWarning("placecard: displayCardPrefab 未設定，無法替換");
+            return;
         }
 
-        // A 的任一角點在 B 內
-        for (int i = 0; i < 4; i++)
+        // 生成顯示卡片到該顯示區
+        var go = Instantiate(displayCardPrefab, areaRT);
+        if (debugLogs) Debug.Log($"placecard: instantiate displayCardPrefab into area={areaRT.gameObject.name}");
+        var dispRT = go.GetComponent<RectTransform>();
+        if (dispRT != null)
         {
-            if (RectTransformUtility.RectangleContainsScreenPoint(b, aScreen[i], cam))
-            {
-                if (debugLogs) Debug.Log("placecard: A corner inside B");
-                return true;
-            }
+            dispRT.anchoredPosition = Vector2.zero; // 置中顯示區
+            if (debugLogs) Debug.Log("placecard: display card anchoredPosition set to zero (center)");
         }
-        // B 的任一角點在 A 內（涵蓋 B 完全包含於 A 的情況）
-        for (int i = 0; i < 4; i++)
+        else
         {
-            if (RectTransformUtility.RectangleContainsScreenPoint(a, bScreen[i], cam))
-            {
-                if (debugLogs) Debug.Log("placecard: B corner inside A");
-                return true;
-            }
-        }
-        // 補充：A 的中心在 B 內
-        Vector3 aCenterWorld = (aCorners[0] + aCorners[2]) * 0.5f;
-        Vector2 aCenterScreen = RectTransformUtility.WorldToScreenPoint(cam, aCenterWorld);
-        if (RectTransformUtility.RectangleContainsScreenPoint(b, aCenterScreen, cam))
-        {
-            if (debugLogs) Debug.Log("placecard: A center inside B");
-            return true;
+            go.transform.localPosition = Vector3.zero;
+            if (debugLogs) Debug.Log("placecard: display card is non-UI, localPosition set to zero");
         }
 
-        return false;
+        // 刪除原卡片
+        if (debugLogs) Debug.Log($"placecard: destroy original card {cardGO.name}");
+        Destroy(cardGO);
     }
 }

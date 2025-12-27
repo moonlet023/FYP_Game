@@ -39,6 +39,7 @@ public class drawcard : MonoBehaviour
     // 無 ScrollRect 時使用滑鼠滾輪捲動內容
     public bool enableWheelScrollWithoutScrollRect = true;
     public float wheelScrollSpeed = 200f; // 每單位滾輪移動的像素偏移
+    public bool debugLogs = true; // 顯示除錯訊息
 
     // Start is called before the first frame update
     void Start()
@@ -50,7 +51,15 @@ public class drawcard : MonoBehaviour
         {
             EnsureScrollSetup();
         }
-        Topdrawnum(num);
+        if (num > 0)
+        {
+            if (debugLogs) Debug.Log($"drawcard: Start draw {num} cards");
+            Topdrawnum(num);
+        }
+        else if (debugLogs)
+        {
+            Debug.Log("drawcard: num is 0, awaiting external draw calls");
+        }
     }
 
     // Update is called once per frame
@@ -127,8 +136,9 @@ public class drawcard : MonoBehaviour
                         RectTransform containerRT = cardContainer as RectTransform;
                         if (containerRT != null)
                         {
-                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(Camera.main, sourceAnchor.position);
-                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, Camera.main, out localPoint);
+                            var cam = GetCanvasCamera(cardContainer);
+                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(cam, sourceAnchor.position);
+                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, cam, out localPoint);
                             startPos = localPoint;
                         }
                         else
@@ -180,8 +190,9 @@ public class drawcard : MonoBehaviour
                         RectTransform containerRT = cardContainer as RectTransform;
                         if (containerRT != null)
                         {
-                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(Camera.main, sourceAnchor.position);
-                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, Camera.main, out localPoint);
+                            var cam = GetCanvasCamera(cardContainer);
+                            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(cam, sourceAnchor.position);
+                            RectTransformUtility.ScreenPointToLocalPointInRectangle(containerRT, screenPoint, cam, out localPoint);
                             rt.anchoredPosition = localPoint;
                         }
                         else
@@ -404,6 +415,13 @@ public class drawcard : MonoBehaviour
         }
         csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         csf.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+    }
+
+    // 取得與容器同 Canvas 相機；Overlay Canvas 則返回 null
+    private Camera GetCanvasCamera(Transform t)
+    {
+        var canvas = t != null ? t.GetComponentInParent<Canvas>() : null;
+        return canvas != null ? canvas.worldCamera : null; // Overlay 為 null；Camera Canvas 為指定相機
     }
 
     private void ReflowHandUI()
