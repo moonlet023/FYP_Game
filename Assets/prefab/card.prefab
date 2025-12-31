@@ -11,7 +11,9 @@ GameObject:
   - component: {fileID: 9209707357631571727}
   - component: {fileID: 7162290404673381795}
   - component: {fileID: 8130607095968984857}
-  - component: {fileID: -9149491606257308514}
+  - component: {fileID: -2745003656568456638}
+  - component: {fileID: 2721774768353544378}
+  - component: {fileID: 204806833387935195}
   m_Layer: 5
   m_Name: card
   m_TagString: Untagged
@@ -73,7 +75,31 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
---- !u!114 &-9149491606257308514
+--- !u!225 &-2745003656568456638
+CanvasGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  m_Alpha: 1
+  m_Interactable: 1
+  m_BlocksRaycasts: 1
+  m_IgnoreParentGroups: 0
+--- !u!114 &2721774768353544378
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9d70445bd86e0a418e1b411e6fed446, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &204806833387935195
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -85,7 +111,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6cd314cb4c6c0f34ba0175760dfabfa9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  hoverScale: 2
+  hoverScale: 1.2
   animateDuration: 0.15
   useRectTransform: 1
   bringToFrontOnHover: 1
