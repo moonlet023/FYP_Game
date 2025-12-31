@@ -307,7 +307,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -622,7 +622,6 @@ GameObject:
   - component: {fileID: 316982243}
   - component: {fileID: 316982242}
   - component: {fileID: 316982244}
-  - component: {fileID: 316982245}
   m_Layer: 0
   m_Name: EventSystem
   m_TagString: Untagged
@@ -730,32 +729,6 @@ MonoBehaviour:
   clientId: 0
   loginButton: {fileID: 599692868}
   statusText: {fileID: 1404954338}
---- !u!114 &316982245
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 316982238}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f0381c57ca25d6d4a800392ae56cbc63, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  displayArea:
-  - {fileID: 1737937892}
-  - {fileID: 813197999}
-  - {fileID: 650058188}
-  - {fileID: 491701263}
-  - {fileID: 706551212}
-  card: {fileID: 4871206283626060871, guid: e3335deef3e7dc0438aae24b4808c9f9, type: 3}
-  autoFindCardsInContainer: 1
-  cardContainer: {fileID: 0}
-  autoFindCardsByTag: 0
-  cardTag: Card
-  displayCardPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
-  positionMatchThresholdPixels: 6
-  debugLogs: 1
 --- !u!1 &317183770
 GameObject:
   m_ObjectHideFlags: 0
@@ -1176,7 +1149,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 0}
+  areaModeDisplay: {fileID: 1253378493}
   contentRoot: {fileID: 0}
 --- !u!1 &522636837
 GameObject:
@@ -1698,7 +1671,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 0}
+  areaModeDisplay: {fileID: 2017698438}
   contentRoot: {fileID: 0}
 --- !u!1 &697236306
 GameObject:
@@ -2019,7 +1992,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 0}
+  areaModeDisplay: {fileID: 1732145543}
   contentRoot: {fileID: 0}
 --- !u!1 &749080109
 GameObject:
@@ -2072,7 +2045,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -2444,7 +2417,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 0}
+  areaModeDisplay: {fileID: 749080114}
   contentRoot: {fileID: 0}
 --- !u!1 &908322763
 GameObject:
@@ -3158,7 +3131,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -4484,7 +4457,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -5105,7 +5078,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 0}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1

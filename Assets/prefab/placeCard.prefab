@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 9209707357631571727}
   - component: {fileID: 7162290404673381795}
   - component: {fileID: 8130607095968984857}
+  - component: {fileID: 7999310824427961733}
   m_Layer: 5
   m_Name: placeCard
   m_TagString: Untagged
@@ -72,3 +73,40 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+--- !u!114 &7999310824427961733
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b1e93229bcf49f4ebedf8ed6af10939, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  particleEffectPrefab: {fileID: 2946223095280311965, guid: 16966713336d54d4a96c67725c97301c, type: 3}
+  spawnMultipleAroundCard: 1
+  edgePoints: 8
+  uiOutwardOffset: 8
+  autoDestroyEffects: 0
+  autoDestroySeconds: 1.2
+  spawnPerimeterAroundCard: 1
+  perimeterSpacingPixels: 12
+  perimeterOutwardOffset: 4
+  uiRoot: {fileID: 0}
+  uiRootImage: {fileID: 0}
+  uiRootObjectName: 
+  uiRootTag: 
+  fallbackToAnyCanvasRoot: 1
+  rightClickPanel: {fileID: 8168218619190848892, guid: d1c7ce83ef6a4404ca03b5945bedadb9, type: 3}
+  rightClickPanelName: CardZoom
+  rightClickPanelTag: Zoom
+  rightClickPanelPrefab: {fileID: 0}
+  generatePanelIfMissing: 1
+  generatedPanelSize: {x: 512, y: 512}
+  centerPanelOnOpen: 1
+  ensurePanelCanvasSorting: 1
+  panelSortingOrder: 2000
+  bringPanelToFront: 1
+  debugLogs: 0
