@@ -1832,6 +1832,7 @@ RectTransform:
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 <<<<<<< HEAD
+<<<<<<< HEAD
 --- !u!114 &803317559
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1873,6 +1874,8 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   handCardTransforms: []
+=======
+>>>>>>> parent of 8c7dcf3 (update 20251230)
 =======
 >>>>>>> parent of 8c7dcf3 (update 20251230)
 --- !u!1 &813197997
@@ -4222,6 +4225,7 @@ CanvasRenderer:
   m_GameObject: {fileID: 1845412591}
   m_CullTransparentMesh: 1
 <<<<<<< HEAD
+<<<<<<< HEAD
 --- !u!1 &1956468685
 GameObject:
   m_ObjectHideFlags: 0
@@ -4483,6 +4487,8 @@ MonoBehaviour:
   bringToFrontOnShow: 1
   useOwnCanvasSorting: 0
   sortingOrder: 1000
+=======
+>>>>>>> parent of 8c7dcf3 (update 20251230)
 =======
 >>>>>>> parent of 8c7dcf3 (update 20251230)
 --- !u!1 &2089958969
