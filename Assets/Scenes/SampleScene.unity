@@ -2311,14 +2311,38 @@ MonoBehaviour:
   m_GameObject: {fileID: 803317557}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f7d71837f0b8c5845aa2de60e0cc2b4f, type: 3}
+  m_Script: {fileID: 11500000, guid: bbfa5ec48d4861d438705dcd94ae09a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spacing: 10
-  animateReflow: 1
-  reflowDuration: 0.2
-  centerHand: 1
-  logHandRecordOnChange: 1
+  deckSpawnPoint: {fileID: 762792818}
+  handContainer: {fileID: 803317558}
+  handSpacing: 1.2
+  drawDuration: 0.4
+  drawCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 2
+      outSlope: 2
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  handCardTransforms: []
 --- !u!1 &813197997
 GameObject:
   m_ObjectHideFlags: 0
@@ -4938,21 +4962,25 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   id: 
---- !u!4 &1956468687
-Transform:
+--- !u!224 &1956468687
+RectTransform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1956468685}
-  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -74.175224, y: 19.9728, z: -364.3452}
+  m_LocalPosition: {x: 0, y: 0, z: -364.3452}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: -74.175224, y: 19.9728}
+  m_SizeDelta: {x: 100, y: 100}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1965306534
 GameObject:
   m_ObjectHideFlags: 0
