@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Diagnostics;
+using UnityEngine;
 
 
 public class DeckData
@@ -14,43 +14,78 @@ public class DeckData
         path = "Assets/json/deck.json";
     }
 
-    public void PrintDeckLog()
-    {
-       jsonLoader.SetPath(path);
-       Debug.WriteLine("Deck Path: " + path);
-       Debug.WriteLine("Deck ID: " + id);
-    }
+     public void PrintDeckLog()
+     {
+         jsonLoader.SetPath(path);
+         Debug.Log("Deck Path: " + path);
+         Debug.Log("Deck ID: " + id);
+     }
 
-    public void suffleDeck()
+    // 舊名保留：suffleDeck，呼叫正確拼字的 ShuffleDeck
+    public void suffleDeck() => ShuffleDeck();
+
+    // 正式洗牌（使用一致型別 List<string>）
+    public void ShuffleDeck()
     {
-        var deck = jsonLoader.LoadFromFile<List<int>>(path);
+        var deck = LoadDeck();
         var rnd = new System.Random();
         int n = deck.Count;
         while (n > 1)
         {
             int k = rnd.Next(n--);
-            int temp = deck[n];
+            string temp = deck[n];
             deck[n] = deck[k];
             deck[k] = temp;
         }
-        jsonLoader.SaveToFile(deck, path);
+        SaveDeck(deck);
     }
 
-    public void drawCard(HandData handData, int drawCount)
+    // 抽指定張數，從牌堆移除頂牌並回傳抽到的 id，同時寫入 hand.json
+    public List<string> drawCard(HandData handData, int drawCount)
     {
-        var deck = jsonLoader.LoadFromFile<List<string>>(path);
+        var deck = LoadDeck();
+        var drawn = new List<string>();
         for (int i = 0; i < drawCount; i++)
         {
             if (deck.Count == 0)
             {
-                Debug.WriteLine("Deck is empty!");
+                Debug.Log("Deck is empty!");
                 break;
             }
-            string card = deck[0];
+            string cardId = deck[0];
             deck.RemoveAt(0);
-            handData.Hand.Add(card);
+            drawn.Add(cardId);
+            if (handData != null)
+            {
+                handData.AddCardId(cardId);
+            }
         }
-        jsonLoader.SaveToFile(deck, path);
+        SaveDeck(deck);
+        return drawn;
+    }
+
+    // 讀取整副牌（JSON）
+    public List<string> LoadDeck()
+    {
+        jsonLoader.SetPath(path);
+        return JsonLoader.LoadFromFile<List<string>>(path) ?? new List<string>();
+    }
+
+    // 儲存整副牌（JSON）
+    public void SaveDeck(List<string> deck)
+    {
+        jsonLoader.SetPath(path);
+        JsonLoader.SaveToFile(deck ?? new List<string>(), path, indented: true);
+    }
+
+    // 可選：更新路徑
+    public void SetPath(string newPath)
+    {
+        if (!string.IsNullOrEmpty(newPath))
+        {
+            path = newPath;
+            jsonLoader.SetPath(path);
+        }
     }
 
 
