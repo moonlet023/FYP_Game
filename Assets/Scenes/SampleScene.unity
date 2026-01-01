@@ -307,7 +307,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -622,6 +622,7 @@ GameObject:
   - component: {fileID: 316982243}
   - component: {fileID: 316982242}
   - component: {fileID: 316982244}
+  - component: {fileID: 316982245}
   m_Layer: 0
   m_Name: EventSystem
   m_TagString: Untagged
@@ -729,6 +730,32 @@ MonoBehaviour:
   clientId: 0
   loginButton: {fileID: 599692868}
   statusText: {fileID: 1404954338}
+--- !u!114 &316982245
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 316982238}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f0381c57ca25d6d4a800392ae56cbc63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  displayArea:
+  - {fileID: 1737937892}
+  - {fileID: 813197999}
+  - {fileID: 650058188}
+  - {fileID: 491701263}
+  - {fileID: 706551212}
+  card: {fileID: 4871206283626060871, guid: e3335deef3e7dc0438aae24b4808c9f9, type: 3}
+  autoFindCardsInContainer: 1
+  cardContainer: {fileID: 0}
+  autoFindCardsByTag: 0
+  cardTag: Card
+  displayCardPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+  positionMatchThresholdPixels: 6
+  debugLogs: 1
 --- !u!1 &317183770
 GameObject:
   m_ObjectHideFlags: 0
@@ -1149,7 +1176,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 1253378493}
+  areaModeDisplay: {fileID: 0}
   contentRoot: {fileID: 0}
 --- !u!1 &522636837
 GameObject:
@@ -1671,7 +1698,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 2017698438}
+  areaModeDisplay: {fileID: 0}
   contentRoot: {fileID: 0}
 --- !u!1 &697236306
 GameObject:
@@ -1992,7 +2019,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 1732145543}
+  areaModeDisplay: {fileID: 0}
   contentRoot: {fileID: 0}
 --- !u!1 &749080109
 GameObject:
@@ -2045,7 +2072,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -2105,7 +2132,6 @@ GameObject:
   - component: {fileID: 762792818}
   - component: {fileID: 762792822}
   - component: {fileID: 762792821}
-  - component: {fileID: 762792820}
   m_Layer: 5
   m_Name: deck
   m_TagString: Untagged
@@ -2132,39 +2158,6 @@ RectTransform:
   m_AnchoredPosition: {x: 458, y: -37}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &762792820
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 762792817}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a1c75a241f57ae44abc47fa4f83a6622, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  cardprefab: {fileID: 4871206283626060871, guid: e3335deef3e7dc0438aae24b4808c9f9, type: 3}
-  cardContainer: {fileID: 803317558}
-  wheelOnlyWhenOverflow: 1
-  approximateCardWidth: 120
-  approximateSpacing: 10
-  sourceAnchor: {fileID: 762792818}
-  autoEnableScrollThreshold: 10
-  isUIPlacement: 0
-  spawnJitter: {x: 100, y: 0}
-  spreadFromCenter: 1
-  centerSpacing: 80
-  enableAnimation: 1
-  animateDuration: 0.5
-  uiEnterOffset: {x: -200, y: 0}
-  worldEnterOffset: {x: -2, y: 0, z: 0}
-  num: 8
-  enableScroll: 1
-  scrollRect: {fileID: 0}
-  enableWheelScrollWithoutScrollRect: 1
-  wheelScrollSpeed: 10000
-  debugLogs: 1
 --- !u!114 &762792821
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2321,7 +2314,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f7d71837f0b8c5845aa2de60e0cc2b4f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spacing: 0
+  spacing: 10
   animateReflow: 1
   reflowDuration: 0.2
   centerHand: 1
@@ -2417,7 +2410,7 @@ MonoBehaviour:
   replaceDroppedWithPrefab: 1
   displayPrefab: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
   allowReplaceExisting: 1
-  areaModeDisplay: {fileID: 749080114}
+  areaModeDisplay: {fileID: 0}
   contentRoot: {fileID: 0}
 --- !u!1 &908322763
 GameObject:
@@ -3131,7 +3124,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -4457,7 +4450,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -4915,6 +4908,51 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1845412591}
   m_CullTransparentMesh: 1
+--- !u!1 &1956468685
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1956468687}
+  - component: {fileID: 1956468686}
+  m_Layer: 0
+  m_Name: data
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1956468686
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1956468685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6bab6ec8915686946b8f6c90ce36db85, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  id: 
+--- !u!4 &1956468687
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1956468685}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -74.175224, y: 19.9728, z: -364.3452}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1965306534
 GameObject:
   m_ObjectHideFlags: 0
@@ -5078,7 +5116,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -5342,3 +5380,4 @@ SceneRoots:
   - {fileID: 117058676}
   - {fileID: 1809578729}
   - {fileID: 316982241}
+  - {fileID: 1956468687}

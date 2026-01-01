@@ -1,25 +1,66 @@
 using System;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 
-// 簡易 JSON 讀取工具：
-// - 支援直接從字串或檔案取出「扁平」JSON 物件中的單一元素值
-// - 可處理字串/數字/bool/null 基本型態；複雜巢狀結構請改用類別 + JsonUtility
-public class ReadJson
+// 通用 JSON 載入器：
+// - 提供讀/寫文字、泛型物件序列化/反序列化
+// - 仍保留簡易鍵值擷取（扁平 JSON）以相容既有使用情境
+public class JsonLoader
 {
   public string path;
 
-  // 設定欲讀取的 JSON 檔案路徑
-  public void SetPath(string path)
-  {
-    this.path = path;
-  }
+  public JsonLoader() {}
+  public JsonLoader(string path) { this.path = path; }
 
-  // 從檔案讀取 JSON 文字
+  // 設定欲讀寫的 JSON 檔案路徑
+  public void SetPath(string path) => this.path = path;
+
+  // 從既定路徑讀取 JSON 純文字
   public string ReadJsonText()
   {
     if (string.IsNullOrEmpty(path)) throw new InvalidOperationException("JSON path not set");
-    return File.ReadAllText(path);
+    return File.ReadAllText(path, Encoding.UTF8);
+  }
+
+  // 將 JSON 純文字寫入既定路徑
+  public void WriteJsonText(string json)
+  {
+    if (string.IsNullOrEmpty(path)) throw new InvalidOperationException("JSON path not set");
+    EnsureDirectory(Path.GetDirectoryName(path));
+    File.WriteAllText(path, json ?? string.Empty, Encoding.UTF8);
+  }
+
+  // 以 Newtonsoft.Json 反序列化（使用既定路徑）
+  public T Load<T>()
+  {
+    var json = ReadJsonText();
+    return JsonConvert.DeserializeObject<T>(json);
+  }
+
+  // 以 Newtonsoft.Json 反序列化（指定路徑）
+  public T LoadFromFile<T>(string filePath)
+  {
+    var json = File.ReadAllText(filePath, Encoding.UTF8);
+    return JsonConvert.DeserializeObject<T>(json);
+  }
+
+  // 以 Newtonsoft.Json 序列化（使用既定路徑）
+  public void Save<T>(T data, bool indented = true)
+  {
+    if (string.IsNullOrEmpty(path)) throw new InvalidOperationException("JSON path not set");
+    var json = JsonConvert.SerializeObject(data, indented ? Formatting.Indented : Formatting.None);
+    EnsureDirectory(Path.GetDirectoryName(path));
+    File.WriteAllText(path, json, Encoding.UTF8);
+  }
+
+  // 以 Newtonsoft.Json 序列化（指定路徑）
+  public void SaveToFile<T>(T data, string filePath, bool indented = true)
+  {
+    var json = JsonConvert.SerializeObject(data, indented ? Formatting.Indented : Formatting.None);
+    EnsureDirectory(Path.GetDirectoryName(filePath));
+    File.WriteAllText(filePath, json, Encoding.UTF8);
   }
 
   // 嘗試由 JSON 字串中取得某個鍵的字串值（僅支援扁平結構）
@@ -86,10 +127,23 @@ public class ReadJson
     return false;
   }
 
-  // 範例：從檔案讀取並回傳指定鍵的字串值
+  // 範例：從既定路徑讀取並回傳指定鍵的字串值
   public string GetElementFromFile(string key)
   {
     var json = ReadJsonText();
     return TryGetElementString(json, key, out var v) ? v : null;
   }
+
+  private static void EnsureDirectory(string dir)
+  {
+    if (string.IsNullOrEmpty(dir)) return;
+    if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+  }
+}
+
+// 兼容舊用法：ReadJson 保留為 JsonLoader 的別名/子類
+public class ReadJson : JsonLoader
+{
+  public ReadJson() : base() {}
+  public ReadJson(string path) : base(path) {}
 }

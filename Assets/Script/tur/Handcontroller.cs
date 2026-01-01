@@ -1,12 +1,9 @@
-using System.Collections.Generic;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
-// 掛在「手牌容器」UI（含 RectTransform）上：
-// - 當卡片被移除或新增時，執行水平重排並可選擇動畫（消除空隙）
-// - 維護當前手牌記錄（cardId 或名稱）
-[RequireComponent(typeof(RectTransform))]
-public class SimpleHandController : MonoBehaviour
+public class Handcontroller : MonoBehaviour
 {
     public HandData handData;
     public DeckData deckData;
