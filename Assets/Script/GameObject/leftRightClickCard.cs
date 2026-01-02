@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
+using System.Reflection;
 
 // Remade: Left-click toggles a particle effect around the card.
 // Right-click toggles (open/close) a RawImage panel.
@@ -55,6 +56,20 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 
 	public bool debugLogs = true;
 
+	// --- Combat integration: selection mode only (logic moved to Attack.cs) ---
+	[Header("Combat")]
+	public bool attackableOnLeftClick = true; // 左鍵選擇後可進入攻擊模式
+	private bool _isAttackMode = false;       // 當前是否在攻擊模式
+	public int selectedAttackDamage = 0;      // 外部設定的本次攻擊傷害
+	// 當此卡牌可作為攻擊目標時（例如敵方卡），將其狀態腳本指到此欄位；
+	// 不再由攻擊者持有敵方參考，而是由目標卡在被點擊時提供狀態。
+	public MonoBehaviour targetStatusBehaviour; // 實作 IEnemyStatus 的腳本（僅目標卡需要）
+
+	[Header("Card Data (Optional)")]
+	public bool autoPullAttackFromCardData = true; // 進入攻擊模式時自動讀取卡片 atk
+	public MonoBehaviour cardDataBehaviour;        // 指向卡片資料腳本（含 atk/attack/attackPower）
+	public string[] attackFieldNames = new string[] { "atk", "attack", "Attack", "attackPower", "AttackPower" };
+
 	private GameObject _particleInstance; // for single-spawn mode
 	private List<GameObject> _particleInstances; // for multi-spawn mode
 	private Canvas _canvas; // For coordinate conversion and raycast setup
@@ -68,6 +83,11 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		EnsureClickableGraphicIfUI();
 		ResolveRightClickPanelHints();
 		EnsurePanelIsSceneInstance();
+
+		// Ensure EventSystem exists for UI pointer events
+		EnsureEventSystem();
+		// Auto-resolve target status so敵方卡可被選為目標
+		ResolveTargetStatusBehaviour();
 
 		// Reminder for 3D objects: OnMouseDown requires a Collider
 		if (GetComponent<Collider>() == null && GetComponent<Collider2D>() == null)
@@ -87,8 +107,31 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseDown on {name}");
 		if (Input.GetMouseButtonDown(0))
 		{
-			if (debugLogs) Debug.Log("leftRightClickCard: OnMouseDown detected Left");
-			ToggleParticle();
+			if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseDown Left (awaitingTarget={AttackTargetingManager.Instance.IsAwaitingTarget}, hasTargetStatus={targetStatusBehaviour != null}, selectedDamage={selectedAttackDamage})");
+			// 若目前在等待目標、且本卡具備可攻擊目標的狀態，則直接套用攻擊到此目標
+			if (AttackTargetingManager.Instance.IsAwaitingTarget)
+			{
+				if (targetStatusBehaviour != null)
+				{
+					AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
+				}
+				else
+				{
+					if (debugLogs) Debug.LogWarning("leftRightClickCard: this card is not a valid target (no IEnemyStatus)");
+					return; // 在等待目標時，避免重啟攻擊
+				}
+			}
+			else
+			{
+				ToggleParticle();
+				EnterAttackMode();
+				ResolveSelectedAttackDamageFromCardData();
+				// 交由目標管理器等待下一次點擊作為目標（允許0攻擊）
+				if (attackableOnLeftClick)
+				{
+					AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
+				}
+			}
 		}
 		else if (Input.GetMouseButtonDown(1))
 		{
@@ -103,12 +146,152 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerClick {eventData.button} on {name}");
 		if (eventData.button == PointerEventData.InputButton.Left)
 		{
-			ToggleParticle();
+			// UI 路徑同樣支援目標選取
+			if (AttackTargetingManager.Instance.IsAwaitingTarget)
+			{
+				if (targetStatusBehaviour != null)
+				{
+					AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
+				}
+				else
+				{
+					if (debugLogs) Debug.LogWarning("leftRightClickCard: UI click on non-target card (no IEnemyStatus)");
+					return;
+				}
+			}
+			else
+			{
+				ToggleParticle();
+				EnterAttackMode();
+				ResolveSelectedAttackDamageFromCardData();
+				if (attackableOnLeftClick)
+				{
+					AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
+				}
+			}
 		}
 		else if (eventData.button == PointerEventData.InputButton.Right)
 		{
 			ToggleRightPanel();
 		}
+	}
+	private void EnsureEventSystem()
+	{
+		var es = FindObjectOfType<UnityEngine.EventSystems.EventSystem>();
+		if (es == null)
+		{
+			var go = new GameObject("EventSystem");
+			go.AddComponent<UnityEngine.EventSystems.EventSystem>();
+			go.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+			if (debugLogs) Debug.Log("leftRightClickCard: created EventSystem for UI clicks");
+		}
+	}
+
+	private void ResolveTargetStatusBehaviour()
+	{
+		if (targetStatusBehaviour != null) return;
+		// 先找本物件
+		var selfBehaviours = GetComponents<MonoBehaviour>();
+		for (int i = 0; i < selfBehaviours.Length; i++)
+		{
+			if (selfBehaviours[i] is IEnemyStatus)
+			{
+				targetStatusBehaviour = selfBehaviours[i];
+				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (self) -> {selfBehaviours[i].GetType().Name}");
+				return;
+			}
+		}
+
+		// 再找子物件（例如狀態腳本掛在子節點）
+		var childBehaviours = GetComponentsInChildren<MonoBehaviour>(true);
+		for (int i = 0; i < childBehaviours.Length; i++)
+		{
+			if (childBehaviours[i] is IEnemyStatus)
+			{
+				targetStatusBehaviour = childBehaviours[i];
+				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (child) -> {childBehaviours[i].GetType().Name}");
+				return;
+			}
+		}
+
+		// 最後嘗試父物件（有時卡牌視覺與狀態分層）
+		var parentBehaviours = GetComponentsInParent<MonoBehaviour>(true);
+		for (int i = 0; i < parentBehaviours.Length; i++)
+		{
+			if (parentBehaviours[i] != this && parentBehaviours[i] is IEnemyStatus)
+			{
+				targetStatusBehaviour = parentBehaviours[i];
+				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (parent) -> {parentBehaviours[i].GetType().Name}");
+				return;
+			}
+		}
+
+		if (debugLogs) Debug.Log("leftRightClickCard: no IEnemyStatus found on self/children/parents; this card won't act as a target");
+	}
+
+	private void ResolveSelectedAttackDamageFromCardData()
+	{
+		if (!autoPullAttackFromCardData) return;
+		int resolved;
+		if (TryResolveAttackFromBehaviour(cardDataBehaviour, out resolved))
+		{
+			selectedAttackDamage = resolved;
+			if (debugLogs) Debug.Log($"leftRightClickCard: attack damage resolved from assigned cardData -> {resolved}");
+			return;
+		}
+
+		// 依序在本物件、子物件、父物件搜尋
+		if (TryResolveAttackFromBehaviours(GetComponents<MonoBehaviour>(), out resolved) ||
+			TryResolveAttackFromBehaviours(GetComponentsInChildren<MonoBehaviour>(true), out resolved) ||
+			TryResolveAttackFromBehaviours(GetComponentsInParent<MonoBehaviour>(true), out resolved))
+		{
+			selectedAttackDamage = resolved;
+			if (debugLogs) Debug.Log($"leftRightClickCard: attack damage auto-resolved -> {resolved}");
+		}
+		else if (debugLogs)
+		{
+			Debug.Log("leftRightClickCard: failed to resolve attack damage from card data (fallback to existing selectedAttackDamage)");
+		}
+	}
+
+	private bool TryResolveAttackFromBehaviours(MonoBehaviour[] behaviours, out int value)
+	{
+		for (int i = 0; i < behaviours.Length; i++)
+		{
+			if (TryResolveAttackFromBehaviour(behaviours[i], out value)) return true;
+		}
+		value = 0;
+		return false;
+	}
+
+	private bool TryResolveAttackFromBehaviour(MonoBehaviour mb, out int value)
+	{
+		value = 0;
+		if (mb == null) return false;
+		var t = mb.GetType();
+		// 先找欄位
+		for (int i = 0; i < attackFieldNames.Length; i++)
+		{
+			var f = t.GetField(attackFieldNames[i], BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+			if (f != null)
+			{
+				var obj = f.GetValue(mb);
+				if (obj is int iv) { value = Mathf.Max(0, iv); return true; }
+				if (obj is float fv) { value = Mathf.Max(0, Mathf.RoundToInt(fv)); return true; }
+			}
+		}
+		// 再找屬性
+		for (int i = 0; i < attackFieldNames.Length; i++)
+		{
+			var p = t.GetProperty(attackFieldNames[i], BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+			if (p != null && p.CanRead)
+			{
+				var obj = p.GetValue(mb, null);
+				if (obj is int iv) { value = Mathf.Max(0, iv); return true; }
+				if (obj is float fv) { value = Mathf.Max(0, Mathf.RoundToInt(fv)); return true; }
+			}
+		}
+		return false;
 	}
 
 	private void ToggleParticle()
@@ -810,5 +993,46 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	EnsurePanelVisible();
 	panelGO.SetActive(false); // default closed until first toggle
 	if (debugLogs) Debug.Log("leftRightClickCard: generated rightClickPanel and set default inactive");
+	}
+
+	// --- Combat helpers ---
+	private IEnemyStatus GetEnemyStatusOrNull()
+	{
+		// 此方法已不再使用固定敵方參考；保留以防外部仍呼叫。
+		return null;
+	}
+
+	public void EnterAttackMode()
+	{
+		if (!attackableOnLeftClick) return;
+		_isAttackMode = true;
+		if (debugLogs) Debug.Log("leftRightClickCard: attack mode enabled");
+	}
+
+	public void ExitAttackMode()
+	{
+		_isAttackMode = false;
+		if (debugLogs) Debug.Log("leftRightClickCard: attack mode disabled");
+	}
+
+	// 提供一個便捷入口：在攻擊模式下，使用 selectedAttackDamage 執行攻擊（邏輯由 AttackLogic 提供）
+	public AttackResolution PerformSelectedAttack()
+	{
+		if (!_isAttackMode)
+		{
+			if (debugLogs) Debug.Log("leftRightClickCard: PerformSelectedAttack ignored (not in attack mode)");
+			return new AttackResolution();
+		}
+
+		if (selectedAttackDamage <= 0)
+		{
+			if (debugLogs) Debug.Log("leftRightClickCard: PerformSelectedAttack ignored (no damage set)");
+			return new AttackResolution();
+		}
+
+		var status = GetEnemyStatusOrNull();
+		var res = AttackLogic.PerformAttack(status, selectedAttackDamage, debugLogs);
+		ExitAttackMode(); // 預設攻擊後離開攻擊模式（可依需求調整）
+		return res;
 	}
 }

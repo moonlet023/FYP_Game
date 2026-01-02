@@ -11,6 +11,7 @@ public class LoginUIManager : MonoBehaviour
     public Button registerButton;
     public Text statusText;
     public RawImage serverStatusIndicator;
+    public GameObject mainmenuUI;
     
     [Header("API 客戶端")]
     public LoginApiClient apiClient;
@@ -136,6 +137,8 @@ public class LoginUIManager : MonoBehaviour
         // 獲取完整的玩家資料
         string username = usernameInput.text.Trim();
         apiClient.GetPlayerData(username, OnPlayerDataReceived);
+        mainmenuUI.SetActive(true);
+        this.gameObject.SetActive(false);
     }
     
     /// <summary>
