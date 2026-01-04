@@ -14,14 +14,26 @@ public class LoginApiClient : MonoBehaviour
     public bool useHttps = false;
 
     private string baseUrl;
+
+    void Awake()
+    {
+        BuildBaseUrl();
+    }
+
     void Start()
     {
-        // 設定基礎 URL
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            BuildBaseUrl();
+        }
+        Debug.Log($"API 客戶端已初始化: {baseUrl}");
+    }
+
+    private void BuildBaseUrl()
+    {
         string protocol = useHttps ? "https" : "http";
         int port = useHttps ? httpsPort : httpPort;
         baseUrl = $"{protocol}://{serverHost}:{port}";
-        
-        Debug.Log($"API 客戶端已初始化: {baseUrl}");
     }
 
     /// <summary>
@@ -31,6 +43,7 @@ public class LoginApiClient : MonoBehaviour
     /// <param name="callback">回調函數</param>
     public void GetPlayerData(string username, System.Action<LoginResponse> callback)
     {
+        EnsureBaseUrl();
         StartCoroutine(GetPlayerDataCoroutine(username, callback));
     }
     
@@ -57,8 +70,7 @@ public class LoginApiClient : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ 獲取玩家資料失敗: {request.error}");
-                Debug.LogError($"HTTP 狀態碼: {request.responseCode}");
+                LogRequestFailure(request, "GetPlayerData");
                 callback?.Invoke(null);
             }
         }
@@ -72,6 +84,7 @@ public class LoginApiClient : MonoBehaviour
     /// <param name="callback">回調函數 (bool: 密碼是否正確)</param>
     public void CheckPassword(string username, string password, System.Action<bool> callback)
     {
+        EnsureBaseUrl();
         StartCoroutine(CheckPasswordCoroutine(username, password, callback));
     }
     
@@ -102,13 +115,26 @@ public class LoginApiClient : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Debug.Log($"✅ 密碼檢查成功: {request.downloadHandler.text}");
-                bool isValid = bool.Parse(request.downloadHandler.text);
+                bool isValid = false;
+                try
+                {
+                    // 嘗試解析 { ok: bool, error: string }
+                    var resp = JsonUtility.FromJson<AuthResp>(request.downloadHandler.text);
+                    isValid = resp != null && resp.ok;
+                }
+                catch { }
+                // 若不是 JSON，嘗試直接解析為 bool
+                if (!isValid)
+                {
+                    bool parsed;
+                    if (bool.TryParse(request.downloadHandler.text, out parsed))
+                        isValid = parsed;
+                }
                 callback?.Invoke(isValid);
             }
             else
             {
-                Debug.LogError($"❌ 密碼檢查失敗: {request.error}");
-                Debug.LogError($"HTTP 狀態碼: {request.responseCode}");
+                LogRequestFailure(request, "CheckPassword");
                 callback?.Invoke(false);
             }
         }
@@ -122,6 +148,7 @@ public class LoginApiClient : MonoBehaviour
     /// <param name="callback">回調函數 (bool: 註冊是否成功, string: 訊息)</param>
     public void RegisterUser(string username, string password, System.Action<bool, string> callback)
     {
+        EnsureBaseUrl();
         StartCoroutine(RegisterUserCoroutine(username, password, callback));
     }
     
@@ -152,7 +179,18 @@ public class LoginApiClient : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Debug.Log($"✅ 註冊成功: {request.downloadHandler.text}");
-                callback?.Invoke(true, request.downloadHandler.text);
+                string msg = request.downloadHandler.text;
+                try
+                {
+                    var resp = JsonUtility.FromJson<AuthResp>(msg);
+                    if (resp != null)
+                    {
+                        callback?.Invoke(resp.ok, string.IsNullOrEmpty(resp.error) ? msg : resp.error);
+                        yield break;
+                    }
+                }
+                catch { }
+                callback?.Invoke(true, msg);
             }
             else if (request.responseCode == 409) // Conflict - 使用者名稱已存在
             {
@@ -161,11 +199,66 @@ public class LoginApiClient : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"❌ 註冊失敗: {request.error}");
-                Debug.LogError($"HTTP 狀態碼: {request.responseCode}");
+                LogRequestFailure(request, "RegisterUser");
                 callback?.Invoke(false, $"註冊失敗: {request.error}");
             }
         }
+    }
+
+    // 新增：伺服器連線測試（使用既有 /weather/test 路由）
+    public void TestConnection(System.Action<bool, string> callback)
+    {
+        EnsureBaseUrl();
+        StartCoroutine(TestConnectionCoroutine(callback));
+    }
+
+    private IEnumerator TestConnectionCoroutine(System.Action<bool, string> callback)
+    {
+        string url = $"{baseUrl}/weather/test";
+        Debug.Log($"🔗 測試連接: {url}");
+        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        {
+            if (useHttps)
+            {
+                request.certificateHandler = new CustomCertificateHandler();
+            }
+            request.timeout = 10;
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log($"✅ 伺服器連接正常: {request.downloadHandler.text}");
+                callback?.Invoke(true, request.downloadHandler.text);
+            }
+            else
+            {
+                LogRequestFailure(request, "TestConnection");
+                callback?.Invoke(false, request.error);
+            }
+        }
+    }
+
+    // 對齊 RCH_Connection 的回應格式
+    [Serializable]
+    private class AuthResp { public bool ok; public string error; }
+
+    private void EnsureBaseUrl()
+    {
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            Debug.LogWarning("baseUrl 尚未初始化，嘗試重新建立。");
+            BuildBaseUrl();
+        }
+    }
+
+    private void LogRequestFailure(UnityWebRequest request, string tag)
+    {
+        var headers = request.GetResponseHeaders();
+        var headerDump = headers == null ? "<no headers>" : string.Join("; ", System.Linq.Enumerable.Select(headers, kv => kv.Key + ": " + kv.Value));
+        var bodyPreview = request.downloadHandler != null ? request.downloadHandler.text : "<no body>";
+        if (!string.IsNullOrEmpty(bodyPreview) && bodyPreview.Length > 500) bodyPreview = bodyPreview.Substring(0, 500) + "...";
+
+        Debug.LogError($"[{tag}] 請求失敗\nURL: {request.url}\nResult: {request.result}\nError: {request.error}\nHTTP 狀態碼: {request.responseCode}\nHeaders: {headerDump}\nBody: {bodyPreview}");
     }
 }
 

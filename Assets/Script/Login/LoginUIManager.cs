@@ -12,6 +12,7 @@ public class LoginUIManager : MonoBehaviour
     public Text statusText;
     public RawImage serverStatusIndicator;
     public GameObject mainmenuUI;
+    public GameObject loginUI;
     
     [Header("API 客戶端")]
     public LoginApiClient apiClient;
@@ -20,13 +21,7 @@ public class LoginUIManager : MonoBehaviour
     {
         serverStatusIndicator.gameObject.SetActive(false);
 
-        TestConnection();
-
-        // 設定按鈕事件
-        loginButton.onClick.AddListener(OnLoginButtonClicked);
-        registerButton.onClick.AddListener(OnRegisterButtonClicked);
-        
-        // 確保有 API 客戶端
+        // 先確保有 API 客戶端，避免 baseUrl 尚未初始化或引用為空
         if (apiClient == null)
         {
             apiClient = FindObjectOfType<LoginApiClient>();
@@ -35,7 +30,14 @@ public class LoginUIManager : MonoBehaviour
                 Debug.LogError("找不到 LoginApiClient！請確保場景中有此元件。");
             }
         }
-        
+
+        // 設定按鈕事件
+        loginButton.onClick.AddListener(OnLoginButtonClicked);
+        registerButton.onClick.AddListener(OnRegisterButtonClicked);
+
+        // 再測試連線，避免使用未初始化的 baseUrl
+        TestConnection();
+
         SetStatusText("請輸入使用者名稱和密碼");
     }
     
@@ -138,7 +140,7 @@ public class LoginUIManager : MonoBehaviour
         string username = usernameInput.text.Trim();
         apiClient.GetPlayerData(username, OnPlayerDataReceived);
         mainmenuUI.SetActive(true);
-        this.gameObject.SetActive(false);
+        loginUI.SetActive(false);
     }
     
     /// <summary>
@@ -181,13 +183,10 @@ public class LoginUIManager : MonoBehaviour
     {
         SetStatusText("🔗 測試連接...");
         
-        // 可以添加一個測試端點來檢查伺服器連接
-        // 或者嘗試獲取一個不存在的使用者來測試 API
-        apiClient.GetPlayerData("test_connection", (result) => {
+        apiClient.TestConnection((ok, msg) => {
             try
             {
-                // 若回傳 null，視為連線或查詢失敗
-                if (result == null)
+                if (!ok)
                 {
                     SetStatusText("❌ 伺服器連接異常");
                     OnServerConnectionFailed();
