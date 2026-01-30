@@ -16,6 +16,24 @@ public class LoginUIManager : MonoBehaviour
     
     [Header("API 客戶端")]
     public LoginApiClient apiClient;
+
+    // 建立 userinfo 儲存路徑（Windows 優先使用 AppData\Local\<Company>\<Product>\player\userinfo.json）
+    private string GetUserInfoPath()
+    {
+        #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+        string appData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+        string dir = System.IO.Path.Combine(appData, Application.companyName, Application.productName, "player");
+        return System.IO.Path.Combine(dir, "userinfo.json");
+        #else
+        return System.IO.Path.Combine(Application.persistentDataPath, "player", "userinfo.json");
+        #endif
+    }
+
+    // 舊版持久化路徑（保留回溯讀取能力）
+    private string GetUserInfoLegacyPath()
+    {
+        return System.IO.Path.Combine(Application.persistentDataPath, "player", "userinfo.json");
+    }
     
     void Start()
     {
@@ -39,6 +57,9 @@ public class LoginUIManager : MonoBehaviour
         TestConnection();
 
         SetStatusText("請輸入使用者名稱和密碼");
+
+        // 嘗試自動登入（若本地已保存使用者資訊）
+        AutoLogin();
     }
     
     /// <summary>
@@ -127,6 +148,49 @@ public class LoginUIManager : MonoBehaviour
             SetStatusText($"❌ {message}");
         }
     }
+
+    // try auto login when open game
+    /// <summary>
+    /// chenck local json file is not empty
+    /// get user uid
+    /// auto login without input username and password
+    /// </summary>
+    private void AutoLogin()
+    {
+        // Windows 以 AppData 優先，否則回退到持久化路徑
+        string filePath = GetUserInfoPath();
+        if (!System.IO.File.Exists(filePath))
+        {
+            string legacy = GetUserInfoLegacyPath();
+            if (System.IO.File.Exists(legacy))
+            {
+                filePath = legacy;
+            }
+        }
+        try
+        {
+            if (System.IO.File.Exists(filePath))
+            {
+                string json = System.IO.File.ReadAllText(filePath);
+                if (!string.IsNullOrEmpty(json))
+                {
+                    var stored = JsonUtility.FromJson<StoredUserInfo>(json);
+                    // 若存有 uid，預填使用者名稱；密碼不再保存
+                    if (stored != null && !string.IsNullOrEmpty(stored.uid))
+                    {
+                        if (usernameInput != null) usernameInput.text = stored.username ?? string.Empty;
+                        if (passwordInput != null) passwordInput.text = string.Empty;
+                        SetStatusText("已載入使用者，請輸入密碼以登入");
+                        // 若後端支援以 uid/token 自動登入，可在此呼叫對應 API
+                    }
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"自動登入讀取本地 JSON 失敗: {ex.Message}");
+        }
+    }
     
     /// <summary>
     /// 登入成功後的處理
@@ -152,6 +216,29 @@ public class LoginUIManager : MonoBehaviour
         {
             Debug.Log($"載入玩家資料: {playerData.username}");
             // 這裡可以將玩家資料保存到遊戲管理器中
+
+            // 登入後從伺服器取得的 uid 寫回本地 JSON
+            // 優先保存至 Windows AppData（其他平台保存至持久化路徑）
+            string filePath = GetUserInfoPath();
+            try
+            {
+                // 確保目錄存在
+                string dir = System.IO.Path.GetDirectoryName(filePath);
+                if (!System.IO.Directory.Exists(dir))
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                }
+
+                // 僅保存 username 與 uid，不再保存密碼
+                var localInfo = new StoredUserInfo(playerData.username, playerData.uid);
+                string json = JsonUtility.ToJson(localInfo);
+                System.IO.File.WriteAllText(filePath, json);
+                Debug.Log($"✅ 使用者資訊（不含密碼，含 uid）已儲存至本地: {filePath}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"寫入使用者 JSON 失敗: {ex.Message}");
+            }
         }
     }
     

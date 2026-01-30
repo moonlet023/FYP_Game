@@ -6,18 +6,27 @@ public class PlayerData
 {
     public string username;
     public string password;
+    public string uid;
     
+    public PlayerData(string username, string password,string uid)
+    {
+        this.username = username;
+        this.password = password;
+        this.uid = uid;
+    }
+
     public PlayerData(string username, string password)
     {
         this.username = username;
         this.password = password;
+        this.uid = "";
     }
 }
 
 [System.Serializable]
 public class LoginResponse
 {
-    public string _id;
+    public string uid;
     public string username;
     public string password;
 }

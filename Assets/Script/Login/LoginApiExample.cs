@@ -97,7 +97,7 @@ public class LoginApiExample : MonoBehaviour
             if (playerData != null)
             {
                 Debug.Log($"✅ 獲取玩家資料成功:");
-                Debug.Log($"   ID: {playerData._id}");
+                Debug.Log($"   ID: {playerData.uid}");
                 Debug.Log($"   使用者名稱: {playerData.username}");
                 Debug.Log($"   密碼: [已隱藏]");
             }
