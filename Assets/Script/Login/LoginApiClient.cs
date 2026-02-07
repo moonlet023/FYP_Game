@@ -4,6 +4,7 @@ using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
+using ServerLib;
 
 public class LoginApiClient : MonoBehaviour
 {
@@ -11,13 +12,23 @@ public class LoginApiClient : MonoBehaviour
     public string serverHost = "pal.moonlet023.com"; // 替換為您的伺服器 IP
     public int httpPort = 6661;
     public int httpsPort = 6660;
-    public bool useHttps = false;
+    public bool useHttps = true;
+    [Header("TLS/憑證設定")]
+    [Tooltip("開發/測試用：信任自簽或不被系統信任的憑證。正式環境請使用可信 CA 憑證並關閉此選項。")]
+    public bool trustSelfSignedCertificate = true;
+    [Tooltip("可選：允許的伺服器憑證 SHA256 指紋（不含冒號與破折號）。若留空且 trustSelfSignedCertificate=true，將接受所有憑證（僅供開發測試）。")]
+    public string[] allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
 
     private string baseUrl;
 
     void Awake()
     {
         BuildBaseUrl();
+        // 若序列化導致 Inspector 為空，保底填入指紋以啟用釘選
+        if (useHttps && trustSelfSignedCertificate && (allowedFingerprints == null || allowedFingerprints.Length == 0))
+        {
+            allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
+        }
     }
 
     void Start()
@@ -54,10 +65,8 @@ public class LoginApiClient : MonoBehaviour
         
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
-            if (useHttps)
-            {
-                request.certificateHandler = new CustomCertificateHandler();
-            }
+            // 共用釘選策略
+            TlsCertConfig.Attach(request, url);
             
             request.timeout = 10;
             yield return request.SendWebRequest();
@@ -104,10 +113,7 @@ public class LoginApiClient : MonoBehaviour
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
             
-            if (useHttps)
-            {
-                request.certificateHandler = new CustomCertificateHandler();
-            }
+            TlsCertConfig.Attach(request, url);
             
             request.timeout = 10;
             yield return request.SendWebRequest();
@@ -168,10 +174,7 @@ public class LoginApiClient : MonoBehaviour
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
             
-            if (useHttps)
-            {
-                request.certificateHandler = new CustomCertificateHandler();
-            }
+            TlsCertConfig.Attach(request, url);
             
             request.timeout = 10;
             yield return request.SendWebRequest();
@@ -218,10 +221,7 @@ public class LoginApiClient : MonoBehaviour
         Debug.Log($"🔗 測試連接: {url}");
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
-            if (useHttps)
-            {
-                request.certificateHandler = new CustomCertificateHandler();
-            }
+            TlsCertConfig.Attach(request, url);
             request.timeout = 10;
             yield return request.SendWebRequest();
 

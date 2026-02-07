@@ -65,7 +65,11 @@ namespace MyGame.Client
                 req.downloadHandler = new DownloadHandlerBuffer();
                 req.SetRequestHeader("Content-Type", "application/json");
                 req.SetRequestHeader("Accept", "application/json");
-                if (_certHandler != null) req.certificateHandler = _certHandler;
+                if (_certHandler != null)
+                {
+                    req.certificateHandler = _certHandler;
+                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
+                }
 
                 yield return req.SendWebRequest();
 
@@ -95,7 +99,11 @@ namespace MyGame.Client
             using (var req = UnityWebRequest.Get(url))
             {
                 req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null) req.certificateHandler = _certHandler;
+                if (_certHandler != null)
+                {
+                    req.certificateHandler = _certHandler;
+                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
+                }
 
                 yield return req.SendWebRequest();
 
@@ -125,7 +133,11 @@ namespace MyGame.Client
             using (var req = UnityWebRequest.Get(url))
             {
                 req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null) req.certificateHandler = _certHandler;
+                if (_certHandler != null)
+                {
+                    req.certificateHandler = _certHandler;
+                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
+                }
 
                 yield return req.SendWebRequest();
 
@@ -155,7 +167,11 @@ namespace MyGame.Client
             using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbDELETE))
             {
                 req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null) req.certificateHandler = _certHandler;
+                if (_certHandler != null)
+                {
+                    req.certificateHandler = _certHandler;
+                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
+                }
 
                 yield return req.SendWebRequest();
 

@@ -4,6 +4,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Networking;
+using ServerLib;
 
 // Usage:
 // 1) 將此腳本掛在場景中的一個 GameObject（如 "NetworkManager"）。
@@ -46,6 +47,12 @@ public class LoginService : MonoBehaviour
     [Header("Server Settings")]
     [SerializeField] private string loginUrl = string.Empty;
 
+    [Header("TLS/憑證設定")]
+    [Tooltip("開發/測試用：信任自簽或不被系統信任的憑證。正式環境請使用可信 CA 憑證並關閉此選項。")]
+    [SerializeField] private bool trustSelfSignedCertificate = true;
+    [Tooltip("允許的伺服器憑證 SHA256 指紋（不含冒號與破折號）。留空則不掛自訂處理器。")]
+    [SerializeField] private string[] allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
+
     [Header("Events")]
     public UnityEvent<string> OnLoginSucceeded;
     public UnityEvent<string> OnLoginFailed;
@@ -78,6 +85,9 @@ public class LoginService : MonoBehaviour
         request.downloadHandler = new DownloadHandlerBuffer();
         request.SetRequestHeader("Content-Type", "application/json");
         request.SetRequestHeader("Accept", "application/json");
+
+        // 使用共用憑證設定產生處理器（指紋釘選）
+        request.certificateHandler = TlsCertConfig.CreateHandlerOrNull(url);
 
         yield return request.SendWebRequest();
 

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System;
 using System.Security.Cryptography.X509Certificates;
+using ServerLib;
 
 namespace ServerLib.RCH_Connection
 {
@@ -13,6 +14,11 @@ namespace ServerLib.RCH_Connection
         [System.Serializable] public class Resp { public bool ok; public string error; public string token; public string accessToken; public string jwt; }
 
         string baseUrl = "https://pal.moonlet023.com:6660";
+        // 指紋釘選：伺服器憑證 SHA256 指紋（可改為從設定載入）
+        static readonly string[] s_allowedFingerprints = new[]
+        {
+            "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85"
+        };
 
         // 靜態認證資料，跨所有 RCH_Connection 實例維持
         static string s_authCookie;
@@ -53,9 +59,8 @@ namespace ServerLib.RCH_Connection
             if (!string.IsNullOrEmpty(s_authCookie))
                 uw.SetRequestHeader("Cookie", s_authCookie);
 
-            // const string KNOWN_THUMBPRINT = "2C43330EBE0BBD5CF541599388BC2A8D9D10C829";
-            // uw.certificateHandler = new AcceptCertByThumbprint(KNOWN_THUMBPRINT);
-            uw.certificateHandler = new AcceptAllCerts();
+            // 掛載共用憑證處理器（嚴格指紋釘選）
+            TlsCertConfig.Attach(uw, baseUrl + path);
 
             UnityWebRequestAsyncOperation op = null;
             try
@@ -109,7 +114,7 @@ namespace ServerLib.RCH_Connection
             }
             uw.downloadHandler = new DownloadHandlerBuffer();
 
-            uw.certificateHandler = new AcceptAllCerts();
+            TlsCertConfig.Attach(uw, baseUrl + path);
 
             if (!string.IsNullOrEmpty(s_bearerToken))
                 uw.SetRequestHeader("Authorization", "Bearer " + s_bearerToken);
@@ -158,7 +163,7 @@ namespace ServerLib.RCH_Connection
         {
             using var uw = UnityWebRequest.Get(baseUrl + path);
             uw.downloadHandler = new DownloadHandlerBuffer();
-            uw.certificateHandler = new AcceptAllCerts();
+            TlsCertConfig.Attach(uw, baseUrl + path);
 
             if (!string.IsNullOrEmpty(s_bearerToken))
                 uw.SetRequestHeader("Authorization", "Bearer " + s_bearerToken);
@@ -211,7 +216,7 @@ namespace ServerLib.RCH_Connection
         IEnumerator GetTest(string path, Action<string> callback)
         {
             using var uw = UnityWebRequest.Get(baseUrl + path);
-            uw.certificateHandler = new AcceptAllCerts();
+            TlsCertConfig.Attach(uw, baseUrl + path);
             
             yield return uw.SendWebRequest();
             

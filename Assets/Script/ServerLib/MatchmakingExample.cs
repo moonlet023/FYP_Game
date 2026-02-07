@@ -5,6 +5,7 @@ using UnityEngine.Networking;
 using MyGame.Client;
 using System.IO;
 using System;
+using ServerLib;
 
 // 範例行為：示範如何在 Unity 中使用 MatchmakingClient
 // 搭配自簽憑證時，請將 Unity-SSLCertificateHandler.cs 放入專案並傳入實例。
@@ -19,6 +20,8 @@ public class MatchmakingExample : MonoBehaviour
     public RawImage waiting;
     public GameObject MainMenuUI;
     [Header("TLS/Cert")] public bool trustSelfSignedCertificate = true; // 開發用：信任自簽憑證
+    [Tooltip("可選：允許的伺服器憑證 SHA256 指紋（不含冒號與破折號）。若未提供指紋則維持系統預設驗證（較安全）。")]
+    public string[] allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
 
   
 
@@ -27,14 +30,13 @@ public class MatchmakingExample : MonoBehaviour
 
     void Awake()
     {
-        
-        // 若需忽略自簽憑證，請使用專案內的自訂 CertificateHandler
-        CertificateHandler certHandler = null;
-        if (trustSelfSignedCertificate)
+        // 保底：若 Inspector 為空，填入預設指紋以啟用釘選
+        if (trustSelfSignedCertificate && (allowedFingerprints == null || allowedFingerprints.Length == 0))
         {
-            // 未提供白名單即接受所有憑證（僅供開發測試）。
-            certHandler = new UnitySSLCertificateHandler();
+            allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
         }
+        // 使用共用憑證設定產生處理器（指紋釘選）
+        CertificateHandler certHandler = TlsCertConfig.CreateHandlerOrNull(baseUrl);
         _client = new MatchmakingClient(baseUrl, certHandler);
 
         if (joinButton != null) joinButton.onClick.AddListener(OnJoinClicked);

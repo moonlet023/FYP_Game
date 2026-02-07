@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using UnityEngine;
 using UnityEngine.Networking;
 
 // 開發用：自訂憑證驗證處理器
@@ -31,10 +32,15 @@ public class UnitySSLCertificateHandler : CertificateHandler
     {
         // 無白名單時，為了開發便利直接接受（不安全，僅供測試）
         if (_allowedFingerprints == null || _allowedFingerprints.Count == 0)
+        {
+            Debug.Log("[TLS] No fingerprints configured; accepting certificate (dev mode)");
             return true;
+        }
 
         var fp = ComputeSha256Fingerprint(certificateData);
-        return _allowedFingerprints.Contains(fp);
+        var ok = _allowedFingerprints.Contains(fp);
+        Debug.Log($"[TLS] Server cert SHA256={fp}; allowed={string.Join(",", _allowedFingerprints)}; result={ok}");
+        return ok;
     }
 
     private static string ComputeSha256Fingerprint(byte[] data)
