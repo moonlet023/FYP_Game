@@ -15,6 +15,7 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     private Vector2 startAnchoredPos;
     public Transform OriginalParent { get; private set; }
     public SimpleHandController OriginalHandController { get; private set; }
+    public Handcontroller OriginalTurHandController { get; private set; }
 
     // 由 SimpleDropArea 設定，表示這次拖曳已被接住
     internal bool wasDroppedThisDrag = false;
@@ -37,6 +38,7 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         startAnchoredPos = rt.anchoredPosition;
         OriginalParent = startParent;
         OriginalHandController = OriginalParent != null ? OriginalParent.GetComponent<SimpleHandController>() : null;
+        OriginalTurHandController = OriginalParent != null ? OriginalParent.GetComponent<Handcontroller>() : null;
 
         // 允許射線穿透自己，讓 Drop 區能接到事件
         cg.blocksRaycasts = false;
@@ -68,6 +70,7 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
             rt.anchoredPosition = startAnchoredPos;
             // 回到手牌後也觸發一次重排與記錄
             OriginalHandController?.OnCardAdded(gameObject);
+            OriginalTurHandController?.OnCardAdded(gameObject);
         }
 
         // 重置旗標，供下一次拖曳使用

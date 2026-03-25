@@ -1,9 +1,16 @@
 using System.Collections.Generic;
 using UnityEngine;
+using Newtonsoft.Json;
 
 
 public class DeckData
 {
+    [System.Serializable]
+    private class DeckFile
+    {
+        public List<string> deck = new List<string>();
+    }
+
     public int id;
     public int count = 50;
     public string path;
@@ -64,18 +71,59 @@ public class DeckData
         return drawn;
     }
 
+    // 移除最上方一張牌，回傳該牌 id
+    public string topCard()
+    {
+        var deck = LoadDeck();
+        if (deck.Count == 0)
+        {
+            Debug.Log("Deck is empty!");
+            return null;
+        }
+        string cardId = deck[0];
+        deck.RemoveAt(0);
+        SaveDeck(deck);
+        return cardId;
+    }
+
     // 讀取整副牌（JSON）
     public List<string> LoadDeck()
     {
         jsonLoader.SetPath(path);
-        return JsonLoader.LoadFromFile<List<string>>(path) ?? new List<string>();
+        try
+        {
+            // 首選目前格式：{ "deck": [...] }
+            var wrapped = JsonLoader.LoadFromFile<DeckFile>(path);
+            if (wrapped != null && wrapped.deck != null)
+            {
+                return wrapped.deck;
+            }
+        }
+        catch (JsonException)
+        {
+            // 往下嘗試舊格式
+        }
+
+        try
+        {
+            // 相容舊格式：["01", "02", ...]
+            return JsonLoader.LoadFromFile<List<string>>(path) ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return new List<string>();
+        }
     }
 
     // 儲存整副牌（JSON）
     public void SaveDeck(List<string> deck)
     {
         jsonLoader.SetPath(path);
-        JsonLoader.SaveToFile(deck ?? new List<string>(), path, indented: true);
+        var data = new DeckFile
+        {
+            deck = deck ?? new List<string>()
+        };
+        JsonLoader.SaveToFile(data, path, indented: true);
     }
 
     // 可選：更新路徑

@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 7999310824427961733}
   - component: {fileID: -1362657534764287366}
   - component: {fileID: 2963757432565093311}
+  - component: {fileID: -3692830983491201804}
   m_Layer: 5
   m_Name: placeCard
   m_TagString: Untagged
@@ -163,3 +164,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c3574f47e29de5f4287504cff059fcc0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &-3692830983491201804
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6ab926f14ea9b6e46b171b4e5e1a9a61, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  cardJsonRelativePath: json/card/card.json

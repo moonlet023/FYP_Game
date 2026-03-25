@@ -37,11 +37,18 @@ public class Handcontroller : MonoBehaviour
 
     [Header("UI 版面（SimpleHandController 同款行為）")]
     public bool useUIRectReflow = true;   // 啟用 UI RectTransform 重排
-    public float uiSpacing = 10f;         // 卡片間距（像素）
     public bool uiAnimateReflow = true;   // 是否啟用重排動畫
     public float uiReflowDuration = 0.2f; // 動畫時間（秒）
     public bool uiCenterHand = true;      // 是否置中整排卡片
+
+    [Header("手牌橫向檢視")]
+    public int handScrollThreshold = 13;   // 手牌超過此數量才啟用橫向檢視
+    public bool enableWheelHandScroll = true; // 以滑鼠滾輪左右檢視手牌
+    public float handWheelScrollSpeed = 60f;  // 每次滾輪移動的像素量
+
     private readonly List<string> uiHandRecord = new List<string>();
+    private float currentHandContentWidth = 0f;
+    private float currentHandVisibleWidth = 0f;
 
     void Start()
     {
@@ -64,7 +71,7 @@ public class Handcontroller : MonoBehaviour
 
     void Update()
     {
-        
+        HandleHandWheelScroll();
     }
 
     public void init()
@@ -192,7 +199,17 @@ public class Handcontroller : MonoBehaviour
     // 當有卡片加入到手牌容器（UI 模式）
     public void OnCardAdded(GameObject added)
     {
-        if (!useUIRectReflow || added == null) return;
+        if (added == null) return;
+
+        if (!handCardTransforms.Contains(added.transform))
+            handCardTransforms.Add(added.transform);
+
+        if (!useUIRectReflow)
+        {
+            CenterHand();
+            return;
+        }
+
         ReflowHandUI();
         RefreshUIHandRecord();
     }
@@ -200,7 +217,16 @@ public class Handcontroller : MonoBehaviour
     // 當有卡片從手牌容器移除（UI 模式）
     public void OnCardRemoved(GameObject removed)
     {
-        if (!useUIRectReflow || removed == null) return;
+        if (removed == null) return;
+
+        RemoveFromHandCardTransforms(removed.transform);
+
+        if (!useUIRectReflow)
+        {
+            CenterHand();
+            return;
+        }
+
         ReflowHandUI();
         RefreshUIHandRecord();
     }
@@ -211,6 +237,9 @@ public class Handcontroller : MonoBehaviour
         var handRT = handContainer as RectTransform;
         if (!useUIRectReflow || handRT == null) return;
 
+        SyncHandCardTransformsFromContainer();
+        float spacing = handSpacing;
+
         int n = handRT.childCount;
         if (n == 0) return;
 
@@ -220,12 +249,18 @@ public class Handcontroller : MonoBehaviour
         {
             var child = handRT.GetChild(i) as RectTransform;
             if (child == null) { widths[i] = 0f; continue; }
-            widths[i] = child.rect.width;
+            widths[i] = GetCardWidth(child);
             totalWidth += widths[i];
-            if (i > 0) totalWidth += uiSpacing;
+            if (i > 0) totalWidth += spacing;
         }
 
-        float startX = uiCenterHand ? -totalWidth * 0.5f : 0f;
+        currentHandContentWidth = totalWidth;
+        currentHandVisibleWidth = GetVisibleWidthForScroll(widths, spacing, n);
+        bool scrollActive = IsHandScrollActive(handRT, totalWidth);
+
+        float startX = (uiCenterHand && !scrollActive)
+            ? -totalWidth * 0.5f
+            : -currentHandVisibleWidth * 0.5f;
         float cursor = startX;
 
         for (int i = 0; i < n; i++)
@@ -240,8 +275,140 @@ public class Handcontroller : MonoBehaviour
             else
                 child.anchoredPosition = target;
 
-            cursor += widths[i] + uiSpacing;
+            cursor += widths[i] + spacing;
         }
+
+        ClampHandContainerX(handRT);
+    }
+
+    private bool IsHandScrollActive(RectTransform handRT, float totalWidth)
+    {
+        if (!useUIRectReflow || handRT == null) return false;
+        if (handRT.childCount <= handScrollThreshold) return false;
+        return totalWidth > currentHandVisibleWidth + 1f;
+    }
+
+    private void HandleHandWheelScroll()
+    {
+        if (!enableWheelHandScroll || !useUIRectReflow) return;
+
+        var handRT = handContainer as RectTransform;
+        if (handRT == null) return;
+        if (!IsHandScrollActive(handRT, currentHandContentWidth)) return;
+
+        var viewport = handRT.parent as RectTransform;
+        if (viewport == null) return;
+
+        float wheel = Input.mouseScrollDelta.y;
+        if (Mathf.Abs(wheel) < 0.0001f) return;
+
+        var pos = handRT.anchoredPosition;
+        pos.x += wheel * handWheelScrollSpeed;
+        handRT.anchoredPosition = pos;
+        ClampHandContainerX(handRT);
+    }
+
+    private void ClampHandContainerX(RectTransform handRT)
+    {
+        if (handRT == null) return;
+
+        var viewport = handRT.parent as RectTransform;
+        if (viewport == null)
+        {
+            var p = handRT.anchoredPosition;
+            p.x = 0f;
+            handRT.anchoredPosition = p;
+            return;
+        }
+
+        float visibleWidth = currentHandVisibleWidth > 0f ? currentHandVisibleWidth : viewport.rect.width;
+        float overflow = Mathf.Max(0f, currentHandContentWidth - visibleWidth);
+        var pos = handRT.anchoredPosition;
+
+        if (overflow <= 0f || handRT.childCount <= handScrollThreshold)
+        {
+            pos.x = 0f;
+        }
+        else
+        {
+            pos.x = Mathf.Clamp(pos.x, -overflow, 0f);
+        }
+
+        handRT.anchoredPosition = pos;
+    }
+
+    private float GetVisibleWidthForScroll(float[] widths, float spacing, int totalCards, float viewportWidth)
+    {
+        if (widths == null || totalCards <= 0)
+            return 0f;
+
+        if (handScrollThreshold <= 0 || totalCards <= handScrollThreshold)
+        {
+            float full = 0f;
+            for (int i = 0; i < totalCards; i++)
+            {
+                full += widths[i];
+                if (i > 0) full += spacing;
+            }
+            return Mathf.Max(0f, full);
+        }
+
+        int visibleCards = Mathf.Min(handScrollThreshold, totalCards);
+        float desired = 0f;
+        for (int i = 0; i < visibleCards; i++)
+        {
+            desired += widths[i];
+            if (i > 0) desired += spacing;
+        }
+
+        return Mathf.Max(0f, desired);
+    }
+
+    private float GetVisibleWidthForScroll(float[] widths, float spacing, int totalCards)
+    {
+        return GetVisibleWidthForScroll(widths, spacing, totalCards, 0f);
+    }
+
+    private float GetCardWidth(RectTransform child)
+    {
+        if (child == null) return 0f;
+
+        var le = child.GetComponent<LayoutElement>();
+        if (le != null && le.preferredWidth > 0f)
+            return le.preferredWidth;
+
+        if (child.rect.width > 0f)
+            return child.rect.width;
+
+        return Mathf.Max(1f, targetCardWidth);
+    }
+
+    private void RemoveFromHandCardTransforms(Transform removed)
+    {
+        for (int i = handCardTransforms.Count - 1; i >= 0; i--)
+        {
+            var t = handCardTransforms[i];
+            if (t == null || t == removed)
+                handCardTransforms.RemoveAt(i);
+        }
+    }
+
+    private void SyncHandCardTransformsFromContainer()
+    {
+        if (handContainer == null) return;
+
+        handCardTransforms.Clear();
+        for (int i = 0; i < handContainer.childCount; i++)
+        {
+            handCardTransforms.Add(handContainer.GetChild(i));
+        }
+    }
+
+    // 取得手牌容器所在 Canvas 的相機；Overlay 模式回傳 null
+    private Camera GetCanvasCamera(Transform t)
+    {
+        var canvas = t != null ? t.GetComponentInParent<Canvas>() : null;
+        return canvas != null ? canvas.worldCamera : null;
     }
 
     // 重建 UI 模式的手牌記錄
@@ -395,5 +562,27 @@ public class Handcontroller : MonoBehaviour
         }
         var t = go.transform;
         PlayDrawCardAnimation(t, handCardTransforms.Count);
+    }
+
+    // 將指定 id 的牌放回牌堆（從 handData 移除，加入 deckData）
+    public void backToDeck(List<string> cardIds)
+    {
+        if (cardIds == null || cardIds.Count == 0) return;
+
+        var deck = deckData.LoadDeck();
+        foreach (var id in cardIds)
+        {
+            if (handData.Hand.Contains(id))
+            {
+                handData.Hand.Remove(id);
+                deck.Add(id);
+            }
+            else
+            {
+                Debug.LogWarning("backToDeck: Hand does not contain card ID " + id);
+            }
+        }
+        deckData.SaveDeck(deck);
+        handData.SaveHand();
     }
 }

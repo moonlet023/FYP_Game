@@ -4,216 +4,424 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
-// 簡易配對 API 客戶端（Unity）
-// 依賴伺服器端端點：
-// POST   /match/queue               -> 建立 ticket（加入佇列或立即配對）
-// GET    /match/status/{ticketId}   -> 查詢 ticket 狀態（Waiting/Matched/Cancelled）
-// GET    /match/detail/{matchId}    -> 取得配對雙方資訊
-// DELETE /match/queue/{ticketId}    -> 取消佇列
-// 若使用自簽 HTTPS 憑證，請搭配專案內的 Unity-SSLCertificateHandler.cs
-
-namespace MyGame.Client
+public class MatchApiClient : MonoBehaviour
 {
+    [Header("Server")]
+    public string baseUrl = "https://pal.moonlet023.com:6661"; // 開發建議先用 http
+    public float pollInterval = 1.0f;
+
+    private string _ticketId;
+    private Coroutine _pollCoroutine;
+
     [Serializable]
     public class JoinRequest
     {
-        public string uid;       // 用於配對
-        public string username;  // 可選，用於顯示
+        public string uid;
+        public string username;
     }
 
     [Serializable]
-    public class TicketStatusDto
+    public class PlayerReadyRequest
+    {
+        public string uid;
+        public bool isReady;
+    }
+
+    [Serializable]
+    public class TicketStatus
     {
         public string ticketId;
         public string uid;
-        public string username;      // optional
-        public int state;       // 0=Waiting, 1=Matched, 2=Cancelled
-        public string matchId;  // 可能為 null/空字串
-        public string opponentUid;     // 可能為 null/空字串
-        public string opponentUsername; // 可能為 null/空字串
+        public string username;
+        public string state; // Waiting / Matched / Cancelled
+        public string matchId;
+        public string roomId;
+        public string opponentUid;
+        public string opponentUsername;
+    }
+
+    public void StartPairing(string uid, string username, Action<TicketStatus> onMatched, Action<string> onError)
+    {
+        if (_pollCoroutine != null) StopCoroutine(_pollCoroutine);
+        StartCoroutine(JoinQueue(uid, username, onMatched, onError));
+    }
+
+    public void CancelPairing(Action onDone = null)
+    {
+        if (_pollCoroutine != null)
+        {
+            StopCoroutine(_pollCoroutine);
+            _pollCoroutine = null;
+        }
+
+        if (!string.IsNullOrEmpty(_ticketId))
+            StartCoroutine(Delete($"/match/queue/{_ticketId}", _ => onDone?.Invoke(), _ => onDone?.Invoke()));
+        else
+            onDone?.Invoke();
+    }
+
+    public void SetReady(string roomId, string uid, bool isReady, Action<string> onOk, Action<string> onError)
+    {
+        var body = new PlayerReadyRequest { uid = uid, isReady = isReady };
+        StartCoroutine(PostJson($"/match/room/{roomId}/ready", JsonUtility.ToJson(body), onOk, onError));
+    }
+
+    public void StartGame(string roomId, Action<string> onOk, Action<string> onError)
+    {
+        StartCoroutine(PostJson($"/match/room/{roomId}/start", "{}", onOk, onError));
+    }
+
+    private IEnumerator JoinQueue(string uid, string username, Action<TicketStatus> onMatched, Action<string> onError)
+    {
+        var req = new JoinRequest { uid = uid, username = username };
+        bool done = false;
+        string error = null;
+        TicketStatus joinResult = null;
+
+        yield return PostJson(
+            "/match/queue",
+            JsonUtility.ToJson(req),
+            json =>
+            {
+                joinResult = JsonUtility.FromJson<TicketStatus>(json);
+                done = true;
+            },
+            err =>
+            {
+                error = err;
+                done = true;
+            });
+
+        if (!done || error != null || joinResult == null)
+        {
+            onError?.Invoke(error ?? "join queue failed");
+            yield break;
+        }
+
+        _ticketId = joinResult.ticketId;
+
+        if (joinResult.state == "Matched")
+        {
+            onMatched?.Invoke(joinResult);
+            yield break;
+        }
+
+        _pollCoroutine = StartCoroutine(PollStatus(onMatched, onError));
+    }
+
+    private IEnumerator PollStatus(Action<TicketStatus> onMatched, Action<string> onError)
+    {
+        while (true)
+        {
+            bool done = false;
+            string error = null;
+            TicketStatus status = null;
+
+            yield return Get($"/match/status/{_ticketId}",
+                json =>
+                {
+                    status = JsonUtility.FromJson<TicketStatus>(json);
+                    done = true;
+                },
+                err =>
+                {
+                    error = err;
+                    done = true;
+                });
+
+            if (!done)
+            {
+                onError?.Invoke("poll timeout");
+                yield break;
+            }
+
+            if (error != null)
+            {
+                onError?.Invoke(error);
+                yield break;
+            }
+
+            if (status != null && status.state == "Matched")
+            {
+                onMatched?.Invoke(status);
+                yield break;
+            }
+
+            if (status != null && status.state == "Cancelled")
+            {
+                onError?.Invoke("pairing cancelled");
+                yield break;
+            }
+
+            yield return new WaitForSeconds(pollInterval);
+        }
+    }
+
+    private IEnumerator Get(string path, Action<string> onOk, Action<string> onErr)
+    {
+        using var req = UnityWebRequest.Get(baseUrl + path);
+        req.downloadHandler = new DownloadHandlerBuffer();
+        yield return req.SendWebRequest();
+        if (req.result == UnityWebRequest.Result.Success) onOk?.Invoke(req.downloadHandler.text);
+        else onErr?.Invoke($"{req.responseCode} {req.error} {req.downloadHandler.text}");
+    }
+
+    private IEnumerator Delete(string path, Action<string> onOk, Action<string> onErr)
+    {
+        using var req = UnityWebRequest.Delete(baseUrl + path);
+        req.downloadHandler = new DownloadHandlerBuffer();
+        yield return req.SendWebRequest();
+        if (req.result == UnityWebRequest.Result.Success) onOk?.Invoke(req.downloadHandler.text);
+        else onErr?.Invoke($"{req.responseCode} {req.error} {req.downloadHandler.text}");
+    }
+
+    private IEnumerator PostJson(string path, string json, Action<string> onOk, Action<string> onErr)
+    {
+        using var req = new UnityWebRequest(baseUrl + path, "POST");
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
+        req.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Content-Type", "application/json");
+        yield return req.SendWebRequest();
+        if (req.result == UnityWebRequest.Result.Success) onOk?.Invoke(req.downloadHandler.text);
+        else onErr?.Invoke($"{req.responseCode} {req.error} {req.downloadHandler.text}");
+    }
+}
+
+namespace ServerLib
+{
+    [Serializable]
+    public class MatchmakingStatus
+    {
+        public string ticketId;
+        public string uid;
+        public string username;
+        public string state;
+        public string matchId;
+        public string roomId;
+        public string opponentUid;
+        public string opponentUsername;
     }
 
     [Serializable]
-    public class MatchRecordDto
+    public class MatchDetail
     {
         public string matchId;
+        public string roomId;
         public string playerA;
         public string playerB;
-        public string matchedAt; // ISO 字串
+    }
+
+    [Serializable]
+    internal class JoinQueueRequest
+    {
+        public string uid;
+        public string username;
     }
 
     public class MatchmakingClient
     {
-        private readonly string _baseUrl; // e.g. "https://localhost:6660"
-        private readonly CertificateHandler _certHandler; // 可為 null
+        private readonly string _baseUrl;
+        private readonly CertificateHandler _certHandler;
 
         public MatchmakingClient(string baseUrl, CertificateHandler certHandler = null)
         {
-            _baseUrl = baseUrl.TrimEnd('/');
+            _baseUrl = (baseUrl ?? string.Empty).TrimEnd('/');
             _certHandler = certHandler;
         }
 
-        public IEnumerator JoinQueue(string uid, string username, Action<TicketStatusDto> onSuccess, Action<string> onError)
+        public IEnumerator JoinQueue(string uid, string username, Action<MatchmakingStatus> onSuccess, Action<string> onError)
         {
-            var reqBody = JsonUtility.ToJson(new JoinRequest { uid = uid, username = username });
-            var url = _baseUrl + "/match/queue";
-
-            using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+            var body = new JoinQueueRequest { uid = uid, username = username };
+            yield return PostJson("/match/queue", JsonUtility.ToJson(body), json =>
             {
-                var bodyRaw = Encoding.UTF8.GetBytes(reqBody);
-                req.uploadHandler = new UploadHandlerRaw(bodyRaw);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                req.SetRequestHeader("Accept", "application/json");
-                if (_certHandler != null)
+                var status = JsonUtility.FromJson<MatchmakingStatus>(json);
+                if (status == null)
                 {
-                    req.certificateHandler = _certHandler;
-                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
+                    onError?.Invoke("join queue response parse failed");
+                    return;
                 }
-
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    try
-                    {
-                        var dto = JsonUtility.FromJson<TicketStatusDto>(req.downloadHandler.text);
-                        onSuccess?.Invoke(dto);
-                    }
-                    catch (Exception ex)
-                    {
-                        onError?.Invoke($"JoinQueue parse error: {ex.Message}. Body=\n{req.downloadHandler?.text}");
-                    }
-                }
-                else
-                {
-                    var body = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
-                    onError?.Invoke($"JoinQueue error: {req.responseCode} {req.error}\nBody=\n{body}");
-                }
-            }
+                onSuccess?.Invoke(status);
+            }, onError);
         }
 
-        public IEnumerator GetStatus(string ticketId, Action<TicketStatusDto> onSuccess, Action<string> onError)
+        public IEnumerator PollUntilMatched(
+            string ticketId,
+            float pollIntervalSeconds,
+            float timeoutSeconds,
+            Action<MatchmakingStatus> onMatched,
+            Action onTimeout,
+            Action<string> onError)
         {
-            var url = _baseUrl + "/match/status/" + UnityWebRequest.EscapeURL(ticketId);
-            using (var req = UnityWebRequest.Get(url))
+            if (string.IsNullOrEmpty(ticketId))
             {
-                req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null)
-                {
-                    req.certificateHandler = _certHandler;
-                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
-                }
-
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    try
-                    {
-                        var dto = JsonUtility.FromJson<TicketStatusDto>(req.downloadHandler.text);
-                        onSuccess?.Invoke(dto);
-                    }
-                    catch (Exception ex)
-                    {
-                        onError?.Invoke($"GetStatus parse error: {ex.Message}. Body=\n{req.downloadHandler?.text}");
-                    }
-                }
-                else
-                {
-                    var body = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
-                    onError?.Invoke($"GetStatus error: {req.responseCode} {req.error}\nBody=\n{body}");
-                }
+                onError?.Invoke("ticketId is required");
+                yield break;
             }
+
+            var elapsed = 0f;
+            var wait = new WaitForSeconds(Mathf.Max(0.1f, pollIntervalSeconds));
+
+            while (elapsed < timeoutSeconds)
+            {
+                bool done = false;
+                bool hasError = false;
+
+                yield return Get($"/match/status/{ticketId}", json =>
+                {
+                    var status = JsonUtility.FromJson<MatchmakingStatus>(json);
+                    if (status == null)
+                    {
+                        hasError = true;
+                        onError?.Invoke("poll status parse failed");
+                        done = true;
+                        return;
+                    }
+
+                    if (string.Equals(status.state, "Matched", StringComparison.OrdinalIgnoreCase))
+                    {
+                        onMatched?.Invoke(status);
+                        done = true;
+                        return;
+                    }
+
+                    if (string.Equals(status.state, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasError = true;
+                        onError?.Invoke("pairing cancelled");
+                        done = true;
+                        return;
+                    }
+
+                    done = true;
+                }, err =>
+                {
+                    hasError = true;
+                    done = true;
+                    onError?.Invoke(err);
+                });
+
+                if (hasError)
+                {
+                    yield break;
+                }
+
+                if (!done)
+                {
+                    onError?.Invoke("poll request failed");
+                    yield break;
+                }
+
+                elapsed += pollIntervalSeconds;
+                yield return wait;
+            }
+
+            onTimeout?.Invoke();
         }
 
-        public IEnumerator GetMatchDetail(string matchId, Action<MatchRecordDto> onSuccess, Action<string> onError)
+        public IEnumerator GetMatchDetail(string matchId, Action<MatchDetail> onSuccess, Action<string> onError)
         {
-            var url = _baseUrl + "/match/detail/" + UnityWebRequest.EscapeURL(matchId);
-            using (var req = UnityWebRequest.Get(url))
+            if (string.IsNullOrEmpty(matchId))
             {
-                req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null)
-                {
-                    req.certificateHandler = _certHandler;
-                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
-                }
-
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
-                {
-                    try
-                    {
-                        var dto = JsonUtility.FromJson<MatchRecordDto>(req.downloadHandler.text);
-                        onSuccess?.Invoke(dto);
-                    }
-                    catch (Exception ex)
-                    {
-                        onError?.Invoke($"GetMatchDetail parse error: {ex.Message}. Body=\n{req.downloadHandler?.text}");
-                    }
-                }
-                else
-                {
-                    var body = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
-                    onError?.Invoke($"GetMatchDetail error: {req.responseCode} {req.error}\nBody=\n{body}");
-                }
+                onError?.Invoke("matchId is required");
+                yield break;
             }
+
+            yield return Get($"/match/{matchId}", json =>
+            {
+                var detail = JsonUtility.FromJson<MatchDetail>(json);
+                if (detail == null)
+                {
+                    onError?.Invoke("match detail parse failed");
+                    return;
+                }
+                onSuccess?.Invoke(detail);
+            }, onError);
         }
 
         public IEnumerator Cancel(string ticketId, Action onSuccess, Action<string> onError)
         {
-            var url = _baseUrl + "/match/queue/" + UnityWebRequest.EscapeURL(ticketId);
-            using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbDELETE))
+            if (string.IsNullOrEmpty(ticketId))
             {
-                req.downloadHandler = new DownloadHandlerBuffer();
-                if (_certHandler != null)
-                {
-                    req.certificateHandler = _certHandler;
-                    Debug.Log($"[TLS] Handler attached (client-provided) to {url}");
-                }
+                onError?.Invoke("ticketId is required");
+                yield break;
+            }
 
-                yield return req.SendWebRequest();
+            yield return Delete($"/match/queue/{ticketId}", _ => onSuccess?.Invoke(), onError);
+        }
 
-                if (req.result == UnityWebRequest.Result.Success || req.responseCode == 204)
-                {
-                    onSuccess?.Invoke();
-                }
-                else
-                {
-                    onError?.Invoke($"Cancel error: {req.responseCode} {req.error}");
-                }
+        private IEnumerator Get(string path, Action<string> onSuccess, Action<string> onError)
+        {
+            using var req = UnityWebRequest.Get(_baseUrl + path);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            AttachCertificate(req, _baseUrl + path);
+
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                onSuccess?.Invoke(req.downloadHandler.text);
+            }
+            else
+            {
+                onError?.Invoke(FormatError(req));
             }
         }
 
-        // 便利方法：持續輪詢直到配對完成或逾時
-        public IEnumerator PollUntilMatched(string ticketId, float intervalSeconds, float timeoutSeconds,
-            Action<TicketStatusDto> onMatched, Action onTimeout, Action<string> onError)
+        private IEnumerator Delete(string path, Action<string> onSuccess, Action<string> onError)
         {
-            float elapsed = 0f;
-            while (elapsed < timeoutSeconds)
+            using var req = UnityWebRequest.Delete(_baseUrl + path);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            AttachCertificate(req, _baseUrl + path);
+
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
             {
-                bool done = false;
-                yield return GetStatus(ticketId, status =>
-                {
-                    if (status.state == 1) // Matched
-                    {
-                        onMatched?.Invoke(status);
-                        done = true;
-                    }
-                }, err =>
-                {
-                    onError?.Invoke(err);
-                    done = true;
-                });
+                onSuccess?.Invoke(req.downloadHandler.text);
+            }
+            else
+            {
+                onError?.Invoke(FormatError(req));
+            }
+        }
 
-                if (done) yield break;
+        private IEnumerator PostJson(string path, string json, Action<string> onSuccess, Action<string> onError)
+        {
+            using var req = new UnityWebRequest(_baseUrl + path, "POST");
+            var body = Encoding.UTF8.GetBytes(json ?? "{}");
+            req.uploadHandler = new UploadHandlerRaw(body);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            AttachCertificate(req, _baseUrl + path);
 
-                yield return new WaitForSeconds(intervalSeconds);
-                elapsed += intervalSeconds;
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                onSuccess?.Invoke(req.downloadHandler.text);
+            }
+            else
+            {
+                onError?.Invoke(FormatError(req));
+            }
+        }
+
+        private void AttachCertificate(UnityWebRequest req, string requestUrl)
+        {
+            if (_certHandler != null)
+            {
+                req.certificateHandler = _certHandler;
+                return;
             }
 
-            onTimeout?.Invoke();
+            TlsCertConfig.Attach(req, requestUrl);
+        }
+
+        private static string FormatError(UnityWebRequest req)
+        {
+            var body = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
+            return $"{req.responseCode} {req.error} {body}";
         }
     }
 }

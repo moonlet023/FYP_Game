@@ -2,8 +2,12 @@
     "id": "01",
     "name": "Spirit of Wind - eil",
     "type": "Eif",
+    "color": "Green",
+    "cost": 1,
+    "en_spawn": 1,
     "Act Num": 0,
     "skill Text": "When this card is common summon, draw one card.",
     "Atk": 1,
-    "Def": 0
+    "Def": 0,
+    "image": "Assets/texture/card/01.png"
 }

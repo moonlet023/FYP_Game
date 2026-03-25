@@ -2,7 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
-using MyGame.Client;
+using UnityEngine.SceneManagement;
 using System.IO;
 using System;
 using ServerLib;
@@ -19,6 +19,10 @@ public class MatchmakingExample : MonoBehaviour
     public Button cancelButton;
     public RawImage waiting;
     public GameObject MainMenuUI;
+    public GameObject MatchRoomUI;
+    [Header("Match Room")]
+    [Tooltip("配對成功後要切換的場景名稱。留空則不切場景，改用 MatchRoomUI（若有指定）。")]
+    public string matchRoomSceneName;
     [Header("TLS/Cert")] public bool trustSelfSignedCertificate = true; // 開發用：信任自簽憑證
     [Tooltip("可選：允許的伺服器憑證 SHA256 指紋（不含冒號與破折號）。若未提供指紋則維持系統預設驗證（較安全）。")]
     public string[] allowedFingerprints = new[] { "2C:97:2E:87:E3:3B:7A:D3:5C:08:8A:48:F8:28:6F:EC:5C:5B:F6:0F:44:2A:63:4A:2D:47:49:77:AD:50:68:85" };
@@ -45,8 +49,10 @@ public class MatchmakingExample : MonoBehaviour
 
     private void OnJoinClicked()
     {
-        waiting.gameObject.SetActive(true);
-        MainMenuUI.gameObject.SetActive(false);
+        MatchmakingSessionBridge.Clear();
+
+        if (waiting != null) waiting.gameObject.SetActive(true);
+        if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(false);
         // 優先從本地檔案（persistent/LocalAppData 下的 player/userinfo.json）讀取 uid
         string uid = null;
         string username = ""; // 可選：若你有名稱可傳入，否則留空
@@ -84,40 +90,82 @@ public class MatchmakingExample : MonoBehaviour
 
         if (string.IsNullOrEmpty(uid))
         {
-            statusText.text = "UID not found";
-            MainMenuUI.gameObject.SetActive(true);
-            waiting.gameObject.SetActive(false);
+            if (statusText != null) statusText.text = "UID not found";
+            if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(true);
+            if (waiting != null) waiting.gameObject.SetActive(false);
             return;
         }
-        statusText.text = "Queueing by UID...";
+        this.uid = uid;
+        if (statusText != null) statusText.text = "Queueing by UID...";
         StartCoroutine(_client.JoinQueue(uid, username, status =>
         {
+            MatchmakingSessionBridge.SetJoinStatus(status);
+
             _ticketId = status.ticketId;
-            statusText.text = $"Joined queue. Ticket: {_ticketId}. State={status.state}. UID={status.uid}";
+            if (statusText != null) statusText.text = $"Joined queue. Ticket: {_ticketId}. State={status.state}. UID={status.uid}";
             // 開始輪詢直到配對
             StartCoroutine(_client.PollUntilMatched(_ticketId, 2f, 60f,
                 onMatched: matchedStatus =>
                 {
-                    statusText.text = $"Matched! OpponentUid={matchedStatus.opponentUid}. MatchId={matchedStatus.matchId}";
+                    MatchmakingSessionBridge.SetMatchedStatus(matchedStatus);
+
+                    if (waiting != null) waiting.gameObject.SetActive(false);
+                    if (statusText != null) statusText.text = BuildMatchedSummary(matchedStatus);
+
+                    if (string.IsNullOrEmpty(matchedStatus.matchId))
+                    {
+                        return;
+                    }
+
                     // 取詳細資料
                     StartCoroutine(_client.GetMatchDetail(matchedStatus.matchId, detail =>
                     {
-                        statusText.text = $"Match UID: {detail.playerA} vs {detail.playerB}\nMatchId={detail.matchId}";
+                        MatchmakingSessionBridge.SetDetail(detail);
+
+                        if (statusText != null)
+                        {
+                            statusText.text = BuildMatchedSummary(matchedStatus) +
+                                              $"\nDetail: {detail.playerA} vs {detail.playerB}";
+                        }
+
+                        EnterMatchRoom(matchedStatus);
                     }, err =>
                     {
-                        statusText.text = "Get detail error: " + err;
+                        MatchmakingSessionBridge.SetError(err);
+
+                        if (statusText != null)
+                        {
+                            statusText.text = BuildMatchedSummary(matchedStatus) +
+                                              "\nGet detail error: " + err;
+                        }
+
+                        // 即使取詳細資訊失敗，也仍然進房
+                        EnterMatchRoom(matchedStatus);
                     }));
                 },
                 onTimeout: () =>
                 {
-                    statusText.text = "Timeout while waiting for match";
-                    MainMenuUI.gameObject.SetActive(true);
-                    waiting.gameObject.SetActive(false);
+                    MatchmakingSessionBridge.SetError("Timeout while waiting for match");
+
+                    if (statusText != null) statusText.text = "Timeout while waiting for match";
+                    if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(true);
+                    if (waiting != null) waiting.gameObject.SetActive(false);
                 },
-                onError: err => { statusText.text = err; }));
+                onError: err =>
+                {
+                    MatchmakingSessionBridge.SetError(err);
+
+                    if (statusText != null) statusText.text = err;
+                    if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(true);
+                    if (waiting != null) waiting.gameObject.SetActive(false);
+                }));
         }, err =>
         {
-            statusText.text = err;
+            MatchmakingSessionBridge.SetError(err);
+
+            if (statusText != null) statusText.text = err;
+            if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(true);
+            if (waiting != null) waiting.gameObject.SetActive(false);
         }));
         
     }
@@ -125,18 +173,30 @@ public class MatchmakingExample : MonoBehaviour
     {
         if (string.IsNullOrEmpty(_ticketId))
         {
-            statusText.text = "No active ticket";
+            if (statusText != null) statusText.text = "No active ticket";
             return;
         }
 
         StartCoroutine(_client.Cancel(_ticketId, () =>
         {
-            statusText.text = "Cancelled queue";
+            if (statusText != null) statusText.text = "Cancelled queue";
             _ticketId = null;
+            MatchmakingSessionBridge.Clear();
+            if (MainMenuUI != null) MainMenuUI.gameObject.SetActive(true);
+            if (waiting != null) waiting.gameObject.SetActive(false);
         }, err =>
         {
-            statusText.text = err;
+            MatchmakingSessionBridge.SetError(err);
+            if (statusText != null) statusText.text = err;
         }));
+    }
+
+    private string BuildMatchedSummary(MatchmakingStatus matchedStatus)
+    {
+        if (matchedStatus == null) return "Matched!";
+
+        var selfUid = string.IsNullOrEmpty(matchedStatus.uid) ? uid : matchedStatus.uid;
+        return $"Matched!\nSelfUid={selfUid}\nOpponent={matchedStatus.opponentUsername} ({matchedStatus.opponentUid})\nRoomId={matchedStatus.roomId}\nMatchId={matchedStatus.matchId}";
     }
 
     private string GetUserInfoPath()
@@ -148,5 +208,42 @@ public class MatchmakingExample : MonoBehaviour
         #else
         return System.IO.Path.Combine(Application.persistentDataPath, "player", "userinfo.json");
         #endif
+    }
+
+    private void EnterMatchRoom(MatchmakingStatus matchedStatus)
+    {
+        if (matchedStatus != null)
+        {
+            if (!string.IsNullOrEmpty(matchedStatus.roomId))
+            {
+                PlayerPrefs.SetString("match_room_id", matchedStatus.roomId);
+            }
+
+            if (!string.IsNullOrEmpty(matchedStatus.matchId))
+            {
+                PlayerPrefs.SetString("match_id", matchedStatus.matchId);
+            }
+
+            PlayerPrefs.Save();
+        }
+
+        if (!string.IsNullOrWhiteSpace(matchRoomSceneName))
+        {
+            SceneManager.LoadScene(matchRoomSceneName.Trim());
+            return;
+        }
+
+        if (MatchRoomUI != null)
+        {
+            MatchRoomUI.SetActive(true);
+            if (MainMenuUI != null) MainMenuUI.SetActive(false);
+            if (waiting != null) waiting.gameObject.SetActive(false);
+            return;
+        }
+
+        if (statusText != null)
+        {
+            statusText.text += "\nMatched, but no match room target set. Please assign MatchRoomUI or matchRoomSceneName.";
+        }
     }
 }
