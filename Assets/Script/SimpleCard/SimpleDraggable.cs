@@ -17,6 +17,11 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public SimpleHandController OriginalHandController { get; private set; }
     public Handcontroller OriginalTurHandController { get; private set; }
 
+    /// <summary>拖曳開始時的父物件（供非同步取消放置時還原用）。</summary>
+    public Transform StartParent { get; private set; }
+    /// <summary>拖曳開始時的 anchoredPosition（供非同步取消放置時還原用）。</summary>
+    public Vector2 StartAnchoredPos { get; private set; }
+
     // 由 SimpleDropArea 設定，表示這次拖曳已被接住
     internal bool wasDroppedThisDrag = false;
 
@@ -36,6 +41,8 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         wasDroppedThisDrag = false;
         startParent = transform.parent;
         startAnchoredPos = rt.anchoredPosition;
+        StartParent = startParent;
+        StartAnchoredPos = startAnchoredPos;
         OriginalParent = startParent;
         OriginalHandController = OriginalParent != null ? OriginalParent.GetComponent<SimpleHandController>() : null;
         OriginalTurHandController = OriginalParent != null ? OriginalParent.GetComponent<Handcontroller>() : null;

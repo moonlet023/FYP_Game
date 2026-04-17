@@ -20,7 +20,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &3165675689457070318
 RectTransform:
   m_ObjectHideFlags: 0
@@ -94,11 +94,15 @@ MonoBehaviour:
   skillText: 
   Atk: 0
   Def: 0
+  imagePath: 
   overrideFromCode: 0
   nameText: {fileID: 0}
   skillsText: {fileID: 0}
   atkText: {fileID: 0}
   defText: {fileID: 0}
+  cardRawImage: {fileID: 0}
+  cardSpriteImage: {fileID: 0}
+  cardImage: 
   Act1: {fileID: 0}
   Act2: {fileID: 0}
 --- !u!114 &4962188632767389720

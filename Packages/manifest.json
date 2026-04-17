@@ -1,7 +1,5 @@
 {
   "dependencies": {
-    "com.discord.partnersdk": "file:C:/Users/月夜OUO/Downloads/DiscordSocialSdk-UnityPlugin-1.7.13152/com.discord.partnersdk",
-    "com.rlabrecque.steamworks.net": "file:C:/Users/月夜OUO/Downloads/Steamworks.NET-master/Steamworks.NET-master/com.rlabrecque.steamworks.net",
     "com.unity.collab-proxy": "2.9.3",
     "com.unity.feature.development": "1.0.1",
     "com.unity.multiplayer.tools": "1.1.1",

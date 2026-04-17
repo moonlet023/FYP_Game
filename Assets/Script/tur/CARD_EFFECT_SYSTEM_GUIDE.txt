@@ -1,0 +1,148 @@
+/**
+ * ========================================
+ * 卡片效果系統 - 使用指南
+ * ========================================
+ * 
+ * 本系統通過 EZcode 字串定義卡片效果，支持時間序列觸發。
+ * 
+ * ========================================
+ * 1. EZcode 格式說明
+ * ========================================
+ * 
+ * 基本格式: "事件類型, 效果1:參數, 效果2:參數, ..."
+ * 
+ * 事件類型 (EventType):
+ *   - common_summon  : 普通召喚時觸發
+ *   - special_summon : 特殊召喚時觸發
+ *   - attack         : 攻擊時觸發
+ *   - defend         : 防守時觸發
+ *   - placed         : 卡片放置時觸發
+ *   - destroyed      : 卡片被摧毀時觸發
+ *   - turn_start     : 回合開始時觸發
+ *   - turn_end       : 回合結束時觸發
+ *   - drawn          : 卡片被抽取時觸發
+ *   - discarded      : 卡片被棄置時觸發
+ * 
+ * 效果類型 (ActionType):
+ *   - draw          : 抽牌 (參數: 數量)
+ *   - damage        : 造成傷害 (參數: 傷害值)
+ *   - heal          : 治療 (參數: 治療值)
+ *   - gain_energy   : 獲得能量 (參數: 數量, 顏色)
+ *   - discard       : 棄置 (參數: 數量)
+ *   - summon        : 召喚 (參數: 卡片ID)
+ * 
+ * ========================================
+ * 2. 實際範例
+ * ========================================
+ * 
+ * 例子 1: 普通召喚時抽一張牌
+ *   "common_summon, draw:1"
+ * 
+ * 例子 2: 普通召喚時抽一張牌，獲得1個綠色能量
+ *   "common_summon, draw:1, gain_energy:1:Green"
+ * 
+ * 例子 3: 攻擊時造成2點傷害
+ *   "attack, damage:2"
+ * 
+ * 例子 4: 回合開始時產生能量
+ *   "turn_start, gain_energy:2:Blue"
+ * 
+ * ========================================
+ * 3. 在 card.json 中使用
+ * ========================================
+ * 
+ * {
+ *   "id": {
+ *     "01": {
+ *       "name": "Spirit of Wind - eil",
+ *       "type": "Eif",
+ *       "color": "Green",
+ *       "cost": 1,
+ *       "en_spawn": 1,
+ *       "Act Num": 0,
+ *       "skill Text": "When this card is common summon, draw one card.",
+ *       "Atk": 1,
+ *       "Def": 0,
+ *       "image": "Assets/texture/card/01.png",
+ *       "EZcode": "common_summon, draw:1"
+ *     }
+ *   }
+ * }
+ * 
+ * ========================================
+ * 4. 在代碼中集成
+ * ========================================
+ * 
+ * A. 自動初始化（推薦）：
+ *    CardrunTime 會在 Start() 時自動初始化所有效果
+ *    只需確保 CardrunTime 在場景中存在
+ * 
+ * B. 手動初始化特定卡片：
+ *    CardrunTime cardrunTime = GetComponent<CardrunTime>();
+ *    cardrunTime.InitializeCardEffect("01");
+ * 
+ * C. 觸發卡片效果（例如當卡片被普通召喚時）：
+ *    CardrunTime cardrunTime = GetComponent<CardrunTime>();
+ *    cardrunTime.TriggerCardEffect("01", CardEffectEvent.EventType.CommonSummon);
+ * 
+ * ========================================
+ * 5. 擴展系統 - 添加新效果
+ * ========================================
+ * 
+ * 若要添加新的效果類型 (ActionType)，需要：
+ * 
+ * 步驟 1: 在 CardEffectParser.cs 中添加解析規則
+ *   example: 在 ParseAction() 方法中
+ * 
+ * 步驟 2: 在 CardEffectExecutor.cs 中添加執行邏輯
+ *   example:
+ *   ```
+ *   private void ExecuteNewEffect(CardEffectParser.EffectAction action, string cardId)
+ *   {
+ *       // 實現新效果邏輯
+ *   }
+ *   ```
+ * 
+ * 步驟 3: 在 ExecuteAction() 開關中加入新的 case
+ *   ```
+ *   case "new_effect":
+ *       ExecuteNewEffect(action, cardId);
+ *       break;
+ *   ```
+ * 
+ * ========================================
+ * 6. 代碼架構
+ * ========================================
+ * 
+ * CardEffectEvent.cs
+ *   ↓ 定義事件類型和全局效果註冊系統
+ * 
+ * CardEffectParser.cs
+ *   ↓ 解析 EZcode 字串為效果指令
+ * 
+ * CardEffectExecutor.cs
+ *   ↓ 執行解析後的效果指令
+ * 
+ * CardrunTime.cs
+ *   ↓ 主要管理類，整合上述組件，初始化和觸發效果
+ * 
+ * CardData.cs
+ *   ↓ 包含 EZcode 欄位
+ * 
+ * ========================================
+ * 7. 除錯技巧
+ * ========================================
+ * 
+ * 查看 Unity Console 的 Debug.Log 輸出：
+ *   [CardEffectParser] Parsed EZcode: ...
+ *   [CardEffectExecutor] Executing action: ...
+ *   [CardrunTime] Effect triggered for ...
+ * 
+ * 確認卡片效果是否正確註冊：
+ *   查找 "[CardrunTime] Registered effect for card ..." 的日誌
+ * 
+ * 確認卡片資料是否正確加載：
+ *   查找 "[CardEvent] LoadCardDatabase: loaded=..." 的日誌
+ * 
+ * ========================================
+ */

@@ -136,5 +136,11 @@ public class DeckData
         }
     }
 
+    public void backToDeck(List<string> cardIds)
+    {
+        var deck = LoadDeck();
+        deck.AddRange(cardIds);
+        SaveDeck(deck);
+    }
 
 }

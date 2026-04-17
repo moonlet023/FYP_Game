@@ -15,5 +15,8 @@ namespace Tur
         [JsonProperty("Atk")] public int Atk { get; set; }
         [JsonProperty("Def")] public int Def { get; set; }
         [JsonProperty("image")] public string ImagePath { get; set; }
+        [JsonProperty("EZcode")] public string EZcode { get; set; }
+        [JsonProperty("is Ace")] public bool IsAce { get; set; }
+        [JsonProperty("seal")] public string Seal { get; set; }
     }
 }

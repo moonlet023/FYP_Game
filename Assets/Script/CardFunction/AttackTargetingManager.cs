@@ -28,8 +28,9 @@ public class AttackTargetingManager : MonoBehaviour
 
     private leftRightClickCard _currentAttacker;
     private int _pendingDamage;
+    private GamePlay _gamePlay;
 
-    public bool IsAwaitingTarget => _currentAttacker != null && _pendingDamage > 0;
+    public bool IsAwaitingTarget => _currentAttacker != null;
 
     public void BeginAttack(leftRightClickCard attacker, int damage, bool verbose = false)
     {
@@ -38,6 +39,17 @@ public class AttackTargetingManager : MonoBehaviour
             if (debugLogs || verbose) Debug.LogWarning("AttackTargetingManager: BeginAttack ignored (attacker null)");
             return;
         }
+
+        if (_gamePlay == null)
+            _gamePlay = FindObjectOfType<GamePlay>();
+
+        if (_gamePlay != null && !_gamePlay.CanPlayerAttackThisTurn(out var reason))
+        {
+            if (debugLogs || verbose) Debug.LogWarning($"AttackTargetingManager: attack denied -> {reason}");
+            attacker.ExitAttackMode();
+            return;
+        }
+
         _currentAttacker = attacker;
         _pendingDamage = Mathf.Max(0, damage); // 允許0，負值視為0
         if (debugLogs || verbose) Debug.Log($"AttackTargetingManager: awaiting target -> attacker={attacker.name}, damage={_pendingDamage} (zero allowed)");
@@ -56,7 +68,7 @@ public class AttackTargetingManager : MonoBehaviour
             if (debugLogs || verbose) Debug.LogWarning("AttackTargetingManager: targetStatusBehaviour null");
             return empty;
         }
-        var status = targetStatusBehaviour as IEnemyStatus;
+        var status = EnemyStatusLocator.CoerceStatus(targetStatusBehaviour);
         if (status == null)
         {
             if (debugLogs || verbose) Debug.LogWarning($"AttackTargetingManager: target '{targetStatusBehaviour.name}' does not implement IEnemyStatus");
@@ -66,12 +78,40 @@ public class AttackTargetingManager : MonoBehaviour
         {
             Debug.Log($"AttackTargetingManager: applying attack -> target={targetStatusBehaviour.name}, state={status.State}, hp={status.HP}, guardHP={status.FrontGuardHP}, damage={_pendingDamage}");
         }
-        var res = AttackLogic.PerformAttack(status, _pendingDamage, debugLogs || verbose);
+        int attackValue = Mathf.Max(_pendingDamage, _currentAttacker != null ? _currentAttacker.selectedAttackDamage : 0);
+        var res = AttackLogic.PerformAttack(status, attackValue, debugLogs || verbose);
+
+        if (res.attackerDestroyed)
+        {
+            DestroyAttackerCard(_currentAttacker);
+        }
+
         _currentAttacker.ExitAttackMode();
         _currentAttacker = null;
         _pendingDamage = 0;
-        if (debugLogs || verbose) Debug.Log($"AttackTargetingManager: applied; result guardApplied={res.damageAppliedToGuard}, overflow={res.overflowDamageToEnemy}, guardDestroyed={res.guardDestroyed}. Cleared attacker.");
+        if (debugLogs || verbose) Debug.Log($"AttackTargetingManager: applied; result guardApplied={res.damageAppliedToGuard}, overflow={res.overflowDamageToEnemy}, guardDestroyed={res.guardDestroyed}, attackerDestroyed={res.attackerDestroyed}. Cleared attacker.");
         return res;
+    }
+
+    private void DestroyAttackerCard(leftRightClickCard attacker)
+    {
+        if (attacker == null) return;
+
+        var attackerStatusMB = EnemyStatusLocator.FindStatusBehaviourFrom(attacker.gameObject);
+        var attackerStatus = EnemyStatusLocator.CoerceStatus(attackerStatusMB);
+        if (attackerStatus != null)
+        {
+            attackerStatus.FrontGuardHP = 0;
+            if (debugLogs) Debug.Log($"AttackTargetingManager: attacker '{attacker.name}' destroyed by battle (via FrontGuardHP=0)");
+            return;
+        }
+
+        if (_gamePlay == null)
+            _gamePlay = FindObjectOfType<GamePlay>();
+        _gamePlay?.TrySendCardGameObjectToPlayerDiscard(attacker.gameObject);
+
+        if (debugLogs) Debug.Log($"AttackTargetingManager: attacker '{attacker.name}' destroyed by battle (fallback Destroy)");
+        Destroy(attacker.gameObject);
     }
 
     public void Cancel(bool verbose = false)
@@ -98,20 +138,17 @@ public class AttackTargetingManager : MonoBehaviour
                 return;
             }
 
-            if (debugLogs) Debug.Log($"AttackTargetingManager: picked '{picked.name}', tag='{picked.tag}'");
-            if (useTagFilter && !allowAnyTarget)
-            {
-                if (!picked.CompareTag(targetTag))
-                {
-                    if (debugLogs) Debug.Log($"AttackTargetingManager: picked object does not match targetTag '{targetTag}'");
-                    return;
-                }
-            }
-
-            var statusMB = FindStatusBehaviourFromGO(picked);
+            var statusMB = EnemyStatusLocator.FindStatusBehaviourFrom(picked);
             if (statusMB == null)
             {
                 if (debugLogs) Debug.Log("AttackTargetingManager: picked object has no IEnemyStatus in self/children/parents");
+                return;
+            }
+
+            if (debugLogs) Debug.Log($"AttackTargetingManager: picked '{picked.name}', tag='{picked.tag}', statusHost='{statusMB.name}', statusHostTag='{statusMB.tag}'");
+            if (useTagFilter && !allowAnyTarget && !HasTargetTagInHierarchy(picked, statusMB.gameObject))
+            {
+                if (debugLogs) Debug.Log($"AttackTargetingManager: picked object/status hierarchy does not match targetTag '{targetTag}'");
                 return;
             }
 
@@ -119,18 +156,24 @@ public class AttackTargetingManager : MonoBehaviour
         }
     }
 
-    private MonoBehaviour FindStatusBehaviourFromGO(GameObject go)
+    private bool HasTargetTagInHierarchy(GameObject picked, GameObject statusHost)
     {
-        // self
-        var mbs = go.GetComponents<MonoBehaviour>();
-        for (int i = 0; i < mbs.Length; i++) if (mbs[i] is IEnemyStatus) return mbs[i];
-        // children
-        var childMbs = go.GetComponentsInChildren<MonoBehaviour>(true);
-        for (int i = 0; i < childMbs.Length; i++) if (childMbs[i] is IEnemyStatus) return childMbs[i];
-        // parents
-        var parentMbs = go.GetComponentsInParent<MonoBehaviour>(true);
-        for (int i = 0; i < parentMbs.Length; i++) if (parentMbs[i] is IEnemyStatus) return parentMbs[i];
-        return null;
+        if (string.IsNullOrEmpty(targetTag)) return true;
+
+        if (HasTagOnSelfOrParents(picked, targetTag)) return true;
+        if (statusHost != null && HasTagOnSelfOrParents(statusHost, targetTag)) return true;
+        return false;
+    }
+
+    private bool HasTagOnSelfOrParents(GameObject go, string tag)
+    {
+        var t = go != null ? go.transform : null;
+        while (t != null)
+        {
+            if (t.CompareTag(tag)) return true;
+            t = t.parent;
+        }
+        return false;
     }
 
     private GameObject PickGameObjectUnderPointer()

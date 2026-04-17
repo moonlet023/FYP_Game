@@ -1,20 +1,7 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class Attack : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
 }
 
 // --- Combat types & logic (extracted from card script) ---
@@ -37,69 +24,130 @@ public struct AttackResolution
     public int damageAppliedToGuard;   // 作用於前排的傷害
     public int overflowDamageToEnemy;  // 溢傷到敵方本體的傷害（Defense 下為 0）
     public bool guardDestroyed;        // 前排是否被擊倒
+    public bool attackerDestroyed;     // 攻擊方卡片是否被擊倒
 }
 
 // 攻擊邏輯工具類：提供可重用的攻擊/溢傷處理
 public static class AttackLogic
 {
-    public static AttackResolution ResolveAttackOnEnemy(IEnemyStatus status, int damage, bool debugLogs = false)
+    // 新規則：
+    // - 目標為 Attack：比較雙方攻擊力
+    //   attacker > defenderAtk => defender destroyed + overflow to enemy HP
+    //   attacker < defenderAtk => attacker destroyed
+    //   attacker == defenderAtk => both destroyed
+    // - 目標為 Defense：維持原先以 defenseStat 作門檻，不做反擊破壞
+    public static AttackResolution ResolveBattle(IEnemyStatus defender, int attackerAttack, bool debugLogs = false)
     {
-        if (status == null)
+        if (defender == null)
         {
-            if (debugLogs) Debug.LogWarning("AttackLogic: status is null; resolve aborted");
+            if (debugLogs) Debug.LogWarning("AttackLogic: defender is null; resolve aborted");
             return new AttackResolution();
         }
 
-        int dmg = Mathf.Max(0, damage);
-        int prevHP = Mathf.Max(0, status.HP);
-        int prevGuardHP = Mathf.Max(0, status.FrontGuardHP);
-        var prevState = status.State;
+        int attacker = Mathf.Max(0, attackerAttack);
+        int prevHP = Mathf.Max(0, defender.HP);
+        int prevGuardHP = Mathf.Max(0, defender.FrontGuardHP);
+        var state = defender.State;
 
-        // 依狀態選擇比較閾值（攻擊 vs 防禦）
-        int threshold = prevState == EnemyBattleState.Attack
-            ? Mathf.Max(0, status.AttackStat)
-            : Mathf.Max(0, status.DefenseStat);
+        bool defenderDestroyed = false;
+        bool attackerDestroyed = false;
+        int appliedToGuard = 0;
+        int overflowToEnemy = 0;
 
-        bool cardDestroyed = dmg >= threshold;
-        int overflow = Mathf.Max(0, dmg - threshold);
-        int spillToEnemy = 0;
-
-        if (debugLogs)
+        if (state == EnemyBattleState.Attack)
         {
-            Debug.Log($"AttackLogic: begin -> dmg={dmg}, state={prevState}, threshold={threshold}, hp={prevHP}, guardHP={prevGuardHP}, cardDestroyed={cardDestroyed}, overflow={overflow}");
+            int defenderAttack = Mathf.Max(0, defender.AttackStat);
+            appliedToGuard = Mathf.Min(attacker, defenderAttack);
+
+            if (attacker > defenderAttack)
+            {
+                defenderDestroyed = true;
+                overflowToEnemy = attacker - defenderAttack;
+            }
+            else if (attacker < defenderAttack)
+            {
+                attackerDestroyed = true;
+            }
+            else
+            {
+                // equal
+                defenderDestroyed = true;
+                attackerDestroyed = true;
+            }
+
+            if (debugLogs)
+            {
+                Debug.Log($"AttackLogic: attack-vs-attack -> attacker={attacker}, defenderAtk={defenderAttack}, defenderDestroyed={defenderDestroyed}, attackerDestroyed={attackerDestroyed}, overflow={overflowToEnemy}, hp={prevHP}, guardHP={prevGuardHP}");
+            }
+        }
+        else
+        {
+            int defenderDefense = Mathf.Max(0, defender.DefenseStat);
+            appliedToGuard = Mathf.Min(attacker, defenderDefense);
+            defenderDestroyed = attacker >= defenderDefense;
+
+            if (debugLogs)
+            {
+                Debug.Log($"AttackLogic: attack-vs-defense -> attacker={attacker}, defenderDef={defenderDefense}, defenderDestroyed={defenderDestroyed}, hp={prevHP}, guardHP={prevGuardHP}");
+            }
         }
 
-        if (cardDestroyed)
+        if (defenderDestroyed)
         {
-            // 將 FrontGuardHP 設為 0 以觸發 OnGuardDestroyed 與自動銷毀（若啟用）
-            status.FrontGuardHP = 0;
-
-            // 僅在攻擊狀態下，將溢傷轉到本體 HP
-            if (overflow > 0 && prevState == EnemyBattleState.Attack)
+            defender.FrontGuardHP = 0;
+            if (overflowToEnemy > 0)
             {
-                spillToEnemy = overflow;
-                status.HP = Mathf.Max(0, status.HP - spillToEnemy);
-            }
-            else if (overflow > 0 && prevState == EnemyBattleState.Defense)
-            {
-                if (debugLogs) Debug.Log("AttackLogic: overflow blocked (Defense)");
+                defender.HP = Mathf.Max(0, defender.HP - overflowToEnemy);
             }
         }
 
-        var result = new AttackResolution
+        return new AttackResolution
         {
-            damageAppliedToGuard = Mathf.Min(dmg, threshold),
-            overflowDamageToEnemy = spillToEnemy,
-            guardDestroyed = cardDestroyed
+            damageAppliedToGuard = appliedToGuard,
+            overflowDamageToEnemy = overflowToEnemy,
+            guardDestroyed = defenderDestroyed,
+            attackerDestroyed = attackerDestroyed
         };
-
-        if (debugLogs)
-        {
-            Debug.Log($"AttackLogic: end -> appliedToCard={result.damageAppliedToGuard}, overflowToEnemy={spillToEnemy}, destroyed={cardDestroyed}, newHP={status.HP}, newGuardHP={status.FrontGuardHP}");
-        }
-        return result;
     }
+
+    public static AttackResolution ResolveAttackOnEnemy(IEnemyStatus status, int damage, bool debugLogs = false)
+        => ResolveBattle(status, damage, debugLogs);
 
     public static AttackResolution PerformAttack(IEnemyStatus status, int damage, bool debugLogs = false)
         => ResolveAttackOnEnemy(status, damage, debugLogs);
+}
+
+// 目標查找工具：統一 self/children/parents 的 IEnemyStatus 搜尋策略
+public static class EnemyStatusLocator
+{
+    public static MonoBehaviour FindStatusBehaviourFrom(GameObject go)
+    {
+        if (go == null) return null;
+
+        // self
+        var self = go.GetComponents<MonoBehaviour>();
+        for (int i = 0; i < self.Length; i++)
+        {
+            if (self[i] is IEnemyStatus) return self[i];
+        }
+
+        // children
+        var children = go.GetComponentsInChildren<MonoBehaviour>(true);
+        for (int i = 0; i < children.Length; i++)
+        {
+            if (children[i] is IEnemyStatus) return children[i];
+        }
+
+        // parents
+        var parents = go.GetComponentsInParent<MonoBehaviour>(true);
+        for (int i = 0; i < parents.Length; i++)
+        {
+            if (parents[i] is IEnemyStatus) return parents[i];
+        }
+
+        return null;
+    }
+
+    public static IEnemyStatus CoerceStatus(MonoBehaviour statusBehaviour)
+        => statusBehaviour as IEnemyStatus;
 }

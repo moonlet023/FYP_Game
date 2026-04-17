@@ -135,7 +135,7 @@ GameObject:
   - component: {fileID: 2339237547582980149}
   - component: {fileID: -3361693218113526962}
   - component: {fileID: 3915174463572250897}
-  - component: {fileID: 1324299429374382929}
+  - component: {fileID: 2022557384734679836}
   m_Layer: 5
   m_Name: CardZoom
   m_TagString: Zoom
@@ -269,7 +269,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   backButton: {fileID: 7677399761892299354}
---- !u!114 &1324299429374382929
+--- !u!114 &2022557384734679836
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -288,13 +288,17 @@ MonoBehaviour:
   skillText: 
   Atk: 0
   Def: 0
+  imagePath: 
   overrideFromCode: 0
   nameText: {fileID: 7065492092403576742}
   skillsText: {fileID: 7009533428296304454}
   atkText: {fileID: 5987338706670530973}
   defText: {fileID: 3541385661982855780}
-  Act1: {fileID: 0}
-  Act2: {fileID: 0}
+  cardRawImage: {fileID: 0}
+  cardSpriteImage: {fileID: 0}
+  cardImage: 
+  Act1: {fileID: 4557838077130944721}
+  Act2: {fileID: 6178371019425136786}
 --- !u!1 &917523580098599228
 GameObject:
   m_ObjectHideFlags: 0
@@ -1069,7 +1073,7 @@ RectTransform:
   m_LocalScale: {x: 8.526934, y: 4.91551, z: 4.91551}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 9145730664500263128}
+  - {fileID: 6921419442781818851}
   m_Father: {fileID: 7313379003571130497}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
@@ -1476,7 +1480,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 18.9}
+  m_AnchoredPosition: {x: 0, y: 18.5}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &4744536716061644695
@@ -1570,7 +1574,7 @@ MonoBehaviour:
   m_VertexBufferAutoSizeReduction: 0
   m_useMaxVisibleDescender: 1
   m_pageToDisplay: 1
-  m_margin: {x: 0, y: 0, z: 0, w: 0}
+  m_margin: {x: 0, y: 0, z: 0, w: -41.170017}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
   m_hasFontAssetChanged: 0
@@ -1719,6 +1723,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8013139006501298311}
+  - component: {fileID: 5645942945428302640}
   m_Layer: 5
   m_Name: Text
   m_TagString: Untagged
@@ -1747,7 +1752,24 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!1001 &82012154563207127
+--- !u!114 &5645942945428302640
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8667937042680945582}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e25099034e6712047a190beb715f35e6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  textComponent: {fileID: 7009533428296304454}
+  area: {fileID: 6428823619491458565}
+  autoFindMissingReferences: 0
+  onlyDragWhenPointerOverArea: 0
+  dragSensitivity: 1
+--- !u!1001 &2288574372393281772
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
@@ -1771,9 +1793,13 @@ PrefabInstance:
       propertyPath: skillsText
       value: 
       objectReference: {fileID: 7009533428296304454}
+    - target: {fileID: -1362657534764287366, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+      propertyPath: cardRawImage
+      value: 
+      objectReference: {fileID: 8004900223280220149}
     - target: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
       propertyPath: m_Name
-      value: placeCard
+      value: image
       objectReference: {fileID: 0}
     - target: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
       propertyPath: m_StaticEditorFlags
@@ -1879,13 +1905,56 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 7999310824427961733, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: 2963757432565093311, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: -3692830983491201804, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: -7195785508686413647, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: -5413622298589353721, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: -2708813282971208218, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+    - {fileID: -1362657534764287366, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2233463423824172321}
   m_SourcePrefab: {fileID: 100100000, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
---- !u!224 &9145730664500263128 stripped
+--- !u!1 &6654251012657706155 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4871206283626060871, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+  m_PrefabInstance: {fileID: 2288574372393281772}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &2233463423824172321
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6654251012657706155}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbd688ec241a53c48b80bf964e0b537e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  image: {fileID: 8004900223280220149}
+  cardinfo: {fileID: 337241894184480945}
+  imagepath: 
+  atkText: {fileID: 0}
+  defText: {fileID: 0}
+--- !u!224 &6921419442781818851 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 9209707357631571727, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
-  m_PrefabInstance: {fileID: 82012154563207127}
+  m_PrefabInstance: {fileID: 2288574372393281772}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &8004900223280220149 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8130607095968984857, guid: 2195df614f5d1cc4580c15d4a83bdd90, type: 3}
+  m_PrefabInstance: {fileID: 2288574372393281772}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6654251012657706155}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1344c3c82d62a2a41a3576d8abb8e3ea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

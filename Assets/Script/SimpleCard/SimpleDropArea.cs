@@ -1,3 +1,4 @@
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -24,6 +25,10 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
     [Header("Bench Energy")]
     public CardEvent cardEvent; // 可選；若空，Awake 時自動場景尋找
     public GamePlay gamePlay;  // 可選；若空，Awake 時自動場景尋找
+    public CardrunTime cardrunTime; // 可選；若空，Awake 時自動場景尋找
+
+    [Header("Card Effect Trigger")]
+    public bool triggerCardEffectsOnDrop = true;
 
     // 放下時，用顯示用 Prefab 取代原拖曳卡片
     public bool replaceDroppedWithPrefab = true;
@@ -33,12 +38,16 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
 
     [Header("Mode Display")]
     public SimpleAreaModeDisplay areaModeDisplay; // 可選：放置成功後顯示預設攻擊圖
+    public bool autoHideModeDisplayWhenNoCard = true; // 區域沒有卡片時自動隱藏 icon
+    public bool autoShowDefaultModeDisplayWhenCardExists = false; // 偵測到有卡片時可選擇自動顯示預設 icon
 
     [Header("Content Root (Optional)")]
     public Transform contentRoot; // 若指定，所有放置/檢查只針對此節點的子物件，不影響其他 UI（如圖示）
 
     // 取得放置內容的根節點（未指定則使用自身）
     private Transform Root => contentRoot != null ? contentRoot : transform;
+    private bool _hasOccupantInitialized;
+    private bool _lastHasOccupant;
 
     // 判斷是否為應忽略的 UI 子物件（例如攻/防圖示）
     private bool IsIgnoredChild(Transform child)
@@ -89,10 +98,11 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
 
         if (cardEvent == null) cardEvent = ResolveFromScene<CardEvent>();
         if (gamePlay == null) gamePlay = ResolveFromScene<GamePlay>();
+        if (cardrunTime == null) cardrunTime = ResolveFromScene<CardrunTime>();
 
         if (debugLogs)
         {
-            Debug.Log($"[SimpleDropArea] {name} 初始化 areaType={areaType}  cardEvent={(cardEvent != null ? cardEvent.name : "null")}  gamePlay={(gamePlay != null ? gamePlay.name : "null")}");
+            Debug.Log($"[SimpleDropArea] {name} 初始化 areaType={areaType}  cardEvent={(cardEvent != null ? cardEvent.name : "null")}  gamePlay={(gamePlay != null ? gamePlay.name : "null")}  cardrunTime={(cardrunTime != null ? cardrunTime.name : "null")}");
         }
 
         // 確保 Canvas 上有 GraphicRaycaster
@@ -110,6 +120,13 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         {
             Debug.LogWarning("SimpleDropArea: not under a Canvas – UI drop will not work");
         }
+
+        RefreshModeDisplayVisibility(force: true);
+    }
+
+    void Update()
+    {
+        RefreshModeDisplayVisibility(force: false);
     }
 
     public void OnDrop(PointerEventData eventData)
@@ -117,6 +134,7 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         if (debugLogs) Debug.Log($"SimpleDropArea: OnDrop over {name}");
         var dragged = eventData.pointerDrag;
         if (dragged == null) return;
+        string droppedCardId = ResolveCardId(dragged);
 
         var draggable = dragged.GetComponent<SimpleDraggable>();
         var rt = dragged.GetComponent<RectTransform>();
@@ -147,6 +165,8 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                 if (firstOccupant != null)
                 {
                     if (debugLogs) Debug.Log($"SimpleDropArea: replacing existing '{firstOccupant.name}'");
+                    if (gamePlay == null) gamePlay = ResolveFromScene<GamePlay>();
+                    gamePlay?.TrySendCardGameObjectToPlayerDiscard(firstOccupant.gameObject);
                     Destroy(firstOccupant.gameObject);
                 }
             }
@@ -186,6 +206,20 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                 if (cardEvent == null)
                 {
                     Debug.LogWarning("[SimpleDropArea] Attack: 找不到 CardEvent，無法查詢卡片資料，已取消放置。");
+                    return;
+                }
+
+                // 若為需要手牌棄置的 Ace 卡，使用互動式異步流程（避免 UI 事件順序衝突）
+                string aceId = ResolveCardId(dragged);
+                if (!string.IsNullOrEmpty(aceId)
+                    && cardEvent.TryGetCardById(aceId, out var aceCheckData)
+                    && aceCheckData.IsAce
+                    && !string.IsNullOrWhiteSpace(aceCheckData.Seal)
+                    && aceCheckData.Seal.ToLowerInvariant().Contains("hand card"))
+                {
+                    // 立即鎖定拖曳（避免 OnEndDrag 把卡片還原），之後由協程接管
+                    draggable.wasDroppedThisDrag = true;
+                    StartCoroutine(HandleAceHandDiscardCoroutine(dragged, draggable, aceId, aceCheckData, gamePlay, cardEvent));
                     return;
                 }
 
@@ -253,6 +287,338 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
 
         // 通知這次拖曳已成功放置，避免 Draggable 還原
         draggable.wasDroppedThisDrag = true;
+
+        if (triggerCardEffectsOnDrop)
+        {
+            TriggerDropEffects(droppedCardId);
+        }
+
+        RefreshModeDisplayVisibility(force: true);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Ace + 手牌棄置的非同步協程流程
+    // ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 協程：對需要手牌棄置 Seal 的 Ace 卡進行互動式棄牌，完成後再執行放置。
+    /// 若任何條件不符或玩家取消，則將卡片還原至手牌。
+    /// </summary>
+    private IEnumerator HandleAceHandDiscardCoroutine(
+        GameObject dragged, SimpleDraggable draggable,
+        string cardId, Tur.CardData data,
+        GamePlay gp, CardEvent ce)
+    {
+        string sealStr = data.Seal?.ToLowerInvariant() ?? string.Empty;
+
+        // 1. 解析封印中手牌棄置數量（"discard one hand card" → 1, "discard 2 hand cards" → 2）
+        int handDiscardCnt = 1;
+        int handCardIdx = sealStr.IndexOf("hand card", System.StringComparison.Ordinal);
+        if (handCardIdx > 0)
+        {
+            string before = sealStr.Substring(0, handCardIdx);
+            int lastDiscard = before.LastIndexOf("discard", System.StringComparison.Ordinal);
+            if (lastDiscard >= 0)
+            {
+                string between = before.Substring(lastDiscard + "discard".Length).Trim();
+                var parts = between.Split(new char[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 0 && int.TryParse(parts[0], out int n)) handDiscardCnt = n;
+                // "one", "two" 等文字 → 維持預設 1
+            }
+        }
+
+        // 2. 解析封印中綠色能量棄置數量
+        int greenEnergyCost = 0;
+        if (sealStr.Contains("green energy"))
+        {
+            var tokens = sealStr.Split(new char[] { ' ', ',' }, System.StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < tokens.Length - 1; i++)
+            {
+                if (int.TryParse(tokens[i], out int num))
+                {
+                    // 下一個 token 包含 "green" 即為綠能數量
+                    if (tokens[i + 1].Contains("green"))
+                    {
+                        greenEnergyCost = num;
+                        break;
+                    }
+                }
+            }
+        }
+
+        int coreCost = data.Cost;
+
+        // 3. 預先檢查（不消耗）
+        bool alreadyHasAce = !string.IsNullOrWhiteSpace(gp.PlayerAceCardId);
+        bool canPayCore    = gp.CanPayCoreCount(coreCost);
+        bool canPayGreenEn = greenEnergyCost == 0 || gp.CanPayEnergyByColor("green", greenEnergyCost);
+
+        if (alreadyHasAce || !canPayCore || !canPayGreenEn)
+        {
+            string preCheckReason = alreadyHasAce  ? "場上已有 Ace 卡" :
+                                      !canPayCore    ? $"core 不足（需 {coreCost} 張，現有 {gp.GetPlayerCoreArea().Count} 張）" :
+                                                       $"綠色能量不足（需 {greenEnergyCost}）";
+            if (alreadyHasAce)  Debug.LogWarning("[SimpleDropArea] Ace: 場上已有 Ace 卡，放置取消。");
+            if (!canPayCore)    Debug.LogWarning($"[SimpleDropArea] Ace: core 不足（需 {coreCost} 張，現有 {gp.GetPlayerCoreArea().Count} 張），放置取消。");
+            if (!canPayGreenEn) Debug.LogWarning($"[SimpleDropArea] Ace: 綠色能量不足（需 {greenEnergyCost}），放置取消。");
+            ReturnCardToHand(dragged, draggable, preCheckReason);
+            yield break;
+        }
+
+        // 4. 展示互動棄牌 UI 並等待玩家選擇
+        bool wasDraggedActive = dragged.activeSelf;
+        dragged.SetActive(false);
+
+        var discardTask = gp.RequestInteractiveDiscardAsync(handDiscardCnt);
+        yield return new WaitUntil(() => discardTask.IsCompleted);
+
+        if (discardTask.IsFaulted)
+        {
+            dragged.SetActive(wasDraggedActive);
+            Debug.LogWarning("[SimpleDropArea] Ace: 互動棄牌執行失敗，放置取消。");
+            ReturnCardToHand(dragged, draggable, "互動棄牌執行失敗");
+            yield break;
+        }
+
+        if (discardTask.Result < handDiscardCnt)
+        {
+            dragged.SetActive(wasDraggedActive);
+            Debug.LogWarning("[SimpleDropArea] Ace: 玩家取消互動棄牌，放置取消。");
+            ReturnCardToHand(dragged, draggable, "玩家取消互動棄牌");
+            yield break;
+        }
+
+        // 5. 消耗封印所需綠色能量
+        if (greenEnergyCost > 0 && !gp.TryConsumeEnergyByColor("green", greenEnergyCost))
+        {
+            dragged.SetActive(wasDraggedActive);
+            Debug.LogWarning("[SimpleDropArea] Ace: 確認棄牌後發現綠色能量不足，放置取消。");
+            ReturnCardToHand(dragged, draggable, $"確認棄牌後綠色能量不足（需 {greenEnergyCost}）");
+            yield break;
+        }
+
+        // 6. 消耗 Core（從 playerCoreArea 移除）
+        if (!gp.TryConsumeCoreCount(coreCost))
+        {
+            dragged.SetActive(wasDraggedActive);
+            Debug.LogWarning("[SimpleDropArea] Ace: 確認棄牌後發現 core 不足，放置取消。");
+            ReturnCardToHand(dragged, draggable, $"確認棄牌後 core 不足（需 {coreCost} 張）");
+            yield break;
+        }
+
+        // 7. 登記 Ace
+        dragged.SetActive(wasDraggedActive);
+        gp.RegisterPlayerAce(cardId);
+        if (debugLogs) Debug.Log($"[SimpleDropArea] Ace 互動流程成功：id={cardId}，完成放置。");
+
+        // 8. 完成實際放置
+        CompletePlacementAfterValidation(dragged, draggable, cardId);
+    }
+
+    /// <summary>
+    /// 將驗証通過後的卡片放入放置區（可替換 Prefab 或直接收容）。
+    /// </summary>
+    private void CompletePlacementAfterValidation(GameObject dragged, SimpleDraggable draggable, string cardId)
+    {
+        if (dragged == null) return;
+
+        if (replaceDroppedWithPrefab && displayPrefab != null)
+        {
+            if (draggable.OriginalHandController != null)
+            {
+                var handTf = draggable.OriginalHandController.transform;
+                if (dragged.transform.parent == handTf) dragged.transform.SetParent(null, false);
+                draggable.OriginalHandController.OnCardRemoved(dragged);
+            }
+            if (draggable.OriginalTurHandController != null)
+            {
+                var handTf = draggable.OriginalTurHandController.handContainer != null
+                    ? draggable.OriginalTurHandController.handContainer
+                    : draggable.OriginalTurHandController.transform;
+                if (dragged.transform.parent == handTf) dragged.transform.SetParent(null, false);
+                draggable.OriginalTurHandController.OnCardRemoved(dragged);
+            }
+
+            Destroy(dragged);
+
+            var go = Instantiate(displayPrefab, Root, false);
+            // 手動複製 id（source GO 已被 Destroy）
+            var sc = go.GetComponent<SimpleCardData>() ?? go.AddComponent<SimpleCardData>();
+            sc.cardId = cardId;
+            var cardView = go.GetComponent<CardData>();
+            if (cardView != null) cardView.SetCardId(cardId);
+            var ci = go.GetComponent<CardIdentity>();
+            if (ci != null) ci.Id = cardId;
+
+            var dispRT = go.GetComponent<RectTransform>();
+            if (dispRT != null) dispRT.anchoredPosition = Vector2.zero;
+            else go.transform.localPosition = Vector3.zero;
+
+            areaModeDisplay?.ShowDefault();
+        }
+        else
+        {
+            dragged.transform.SetParent(Root, false);
+            var drt = dragged.GetComponent<RectTransform>();
+            if (drt != null) drt.anchoredPosition = Vector2.zero;
+
+            draggable.OriginalHandController?.OnCardRemoved(dragged);
+            draggable.OriginalTurHandController?.OnCardRemoved(dragged);
+            areaModeDisplay?.ShowDefault();
+        }
+
+        draggable.wasDroppedThisDrag = true;
+        if (triggerCardEffectsOnDrop) TriggerDropEffects(cardId);
+        RefreshModeDisplayVisibility(force: true);
+    }
+
+    /// <summary>
+    /// 協程取消時，將卡片還原至原手牌容器。
+    /// </summary>
+    private void ReturnCardToHand(GameObject dragged, SimpleDraggable draggable, string reason = "未知原因")
+    {
+        if (dragged == null) return;
+
+        Transform returnTo = null;
+        if (draggable.OriginalTurHandController != null)
+            returnTo = draggable.OriginalTurHandController.handContainer
+                       ?? draggable.OriginalTurHandController.transform;
+        else if (draggable.OriginalHandController != null)
+            returnTo = draggable.OriginalHandController.transform;
+        else if (draggable.StartParent != null)
+            returnTo = draggable.StartParent;
+
+        if (returnTo != null)
+        {
+            dragged.transform.SetParent(returnTo, false);
+            var rt = dragged.GetComponent<RectTransform>();
+            if (rt != null) rt.anchoredPosition = draggable.StartAnchoredPos;
+        }
+
+        var cg = dragged.GetComponent<CanvasGroup>();
+        if (cg != null) cg.blocksRaycasts = true;
+
+        draggable.OriginalTurHandController?.OnCardAdded(dragged);
+        draggable.OriginalHandController?.OnCardAdded(dragged);
+
+        if (debugLogs) Debug.Log($"[SimpleDropArea] 卡片已還原至手牌（Ace 放置取消）。原因：{reason}");
+    }
+
+    // ────────────────────────────────────────────────────────────────
+
+    private void TriggerDropEffects(string cardId)
+    {
+        if (string.IsNullOrWhiteSpace(cardId))
+        {
+            if (debugLogs) Debug.LogWarning("[SimpleDropArea] TriggerDropEffects: cardId is empty, skip.");
+            return;
+        }
+
+        if (cardrunTime == null)
+            cardrunTime = ResolveFromScene<CardrunTime>();
+
+        if (cardrunTime == null)
+        {
+            Debug.LogWarning($"[SimpleDropArea] TriggerDropEffects: CardrunTime not found. cardId={cardId}");
+            return;
+        }
+
+        // 所有成功放置都觸發 placed。
+        cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.Placed);
+
+        // Attack 區內的成功放置視為一次 common summon 事件。
+        if (IsAttackArea())
+        {
+            cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.CommonSummon);
+        }
+
+        RefreshPlayerAttackAreaAttackValues();
+    }
+
+    private void RefreshPlayerAttackAreaAttackValues()
+    {
+        foreach (var area in Resources.FindObjectsOfTypeAll<SimpleDropArea>())
+        {
+            if (area == null || !area.gameObject.scene.IsValid())
+                continue;
+
+            if (!area.IsAttackArea())
+                continue;
+
+            if (!IsPlayerOwnedArea(area.transform))
+                continue;
+
+            Transform root = area.Root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var child = root.GetChild(i);
+                if (child == null)
+                    continue;
+
+                var click = child.GetComponentInChildren<leftRightClickCard>(true);
+                if (click != null)
+                    click.RefreshAttackDamageFromData();
+            }
+        }
+    }
+
+    private static bool IsPlayerOwnedArea(Transform areaTransform)
+    {
+        if (areaTransform == null)
+            return false;
+
+        Transform t = areaTransform;
+        while (t != null)
+        {
+            string n = t.name != null ? t.name.ToLowerInvariant() : string.Empty;
+            if (n.Contains("ai") || n.Contains("enemy"))
+                return false;
+            if (n == "player" || n.Contains("player"))
+                return true;
+            t = t.parent;
+        }
+
+        return true;
+    }
+
+    private int CountActiveOccupants()
+    {
+        int count = 0;
+        var r = Root;
+        for (int i = 0; i < r.childCount; i++)
+        {
+            var c = r.GetChild(i);
+            if (IsIgnoredChild(c)) continue;
+            count++;
+        }
+        return count;
+    }
+
+    private void RefreshModeDisplayVisibility(bool force)
+    {
+        if (areaModeDisplay == null) return;
+
+        bool hasOccupant = CountActiveOccupants() > 0;
+        if (!force && _hasOccupantInitialized && hasOccupant == _lastHasOccupant) return;
+
+        _hasOccupantInitialized = true;
+        _lastHasOccupant = hasOccupant;
+
+        if (!hasOccupant)
+        {
+            if (autoHideModeDisplayWhenNoCard)
+            {
+                areaModeDisplay.Hide();
+                if (debugLogs) Debug.Log($"SimpleDropArea: hide mode display on {name} (no card)");
+            }
+            return;
+        }
+
+        if (autoShowDefaultModeDisplayWhenCardExists)
+        {
+            areaModeDisplay.ShowDefault();
+            if (debugLogs) Debug.Log($"SimpleDropArea: show default mode display on {name} (has card)");
+        }
     }
 
     private void CopyCardIdentity(GameObject source, GameObject target)
@@ -438,7 +804,7 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         return totalGenerated;
     }
 
-        // Attack 放牌驗証：檢查 common summon 限制、能量數量、能量顏色，並消耗能量
+        // Attack 放牌驗証：檢查 ace / common summon 限制、能量/core 數量、能量/core 顏色，並消耗
         private bool ValidateAttackPlacement(GameObject cardGO, GamePlay gamePlay, CardEvent cardEvent)
         {
             if (cardGO == null || gamePlay == null || cardEvent == null) return false;
@@ -461,7 +827,41 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                     return false;
                 }
 
-                // 3. 檢查 common summon 限制（假設 type 為 "common" 表示 common summon）
+                // 3. 檢查 ace 卡限制
+                if (data.IsAce)
+                {
+                    if (!string.IsNullOrWhiteSpace(gamePlay.PlayerAceCardId))
+                    {
+                        Debug.LogWarning($"[SimpleDropArea] Attack: Ace 卡本場合只能存在一張，放置取消。");
+                        return false;
+                    }
+
+                    if (!ValidateAceSeal(id, data, gamePlay, cardEvent))
+                    {
+                        Debug.LogWarning($"[SimpleDropArea] Attack: Ace 卡 seal 條件不符，放置取消。");
+                        return false;
+                    }
+
+                    int coreCost = data.Cost;
+
+                    if (debugLogs)
+                        Debug.Log($"[SimpleDropArea] Ace validate: id={id}  coreCost={coreCost}  coreAreaCount={gamePlay.GetPlayerCoreArea().Count}");
+
+                    if (!gamePlay.TryConsumeCoreCount(coreCost))
+                    {
+                        Debug.LogWarning($"[SimpleDropArea] Attack: Ace 卡 core 不足，放置取消。需要 {coreCost} 張 core。");
+                        return false;
+                    }
+
+                    gamePlay.RegisterPlayerAce(id);
+
+                    if (debugLogs)
+                        Debug.Log($"[SimpleDropArea] Ace 放牌成功：id={id}  消耗 {coreCost} 張 core");
+
+                    return true;
+                }
+
+                // 4. 檢查普通卡：common summon 限制
                 if (data.Type == "common")
                 {
                     if (!gamePlay.TryConsumeCommonSummonThisTurn())
@@ -471,14 +871,14 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                     }
                 }
 
-                // 4. 檢查能量條件
+                // 5. 檢查能量條件
                 int costAmount = data.Cost;
                 var requiredColor = string.IsNullOrEmpty(data.Color) ? "colorless" : data.Color;
 
                 if (debugLogs)
                     Debug.Log($"[SimpleDropArea] Attack validation: id={id}  type={data.Type}  cost={costAmount}  color={requiredColor}");
 
-                // 5. 驗証能量並消耗
+                // 6. 驗証能量並消耗
                 if (!gamePlay.TryConsumeEnergyByColor(requiredColor, costAmount))
                 {
                     Debug.LogWarning($"[SimpleDropArea] Attack: 能量不足或顏色不符，放置取消。需要 {costAmount}x '{requiredColor}'。");
@@ -495,6 +895,67 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                 Debug.LogError($"[SimpleDropArea] ValidateAttackPlacement 例外：{ex}");
                 return false;
             }
+        }
+
+        private bool ValidateAceSeal(string aceCardId, Tur.CardData aceData, GamePlay gamePlay, CardEvent cardEvent)
+        {
+            if (string.IsNullOrWhiteSpace(aceData.Seal))
+                return true;
+
+            string sealStr = aceData.Seal.ToLowerInvariant();
+
+            if (sealStr.Contains("discard") && sealStr.Contains("green energy"))
+            {
+                int cnt = 0;
+                var parts = sealStr.Split(' ');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (int.TryParse(parts[i], out int num))
+                    {
+                        cnt = num;
+                        break;
+                    }
+                }
+
+                if (cnt > 0)
+                {
+                    if (!gamePlay.TryConsumeEnergyByColor("green", cnt))
+                    {
+                        Debug.LogWarning($"[SimpleDropArea] Ace seal: need {cnt}x green energy, insufficient.");
+                        return false;
+                    }
+                }
+            }
+
+            if (sealStr.Contains("discard") && sealStr.Contains("hand card"))
+            {
+                int discardCnt = 1;
+                // Only extract the number from the "discard ... hand card" segment,
+                // not from earlier conditions like "discard 3 green energy".
+                int handCardIdx = sealStr.IndexOf("hand card", System.StringComparison.Ordinal);
+                if (handCardIdx > 0)
+                {
+                    string beforeHandCard = sealStr.Substring(0, handCardIdx);
+                    int lastDiscardIdx = beforeHandCard.LastIndexOf("discard", System.StringComparison.Ordinal);
+                    if (lastDiscardIdx >= 0)
+                    {
+                        string between = beforeHandCard.Substring(lastDiscardIdx + "discard".Length).Trim();
+                        var parts = between.Split(new char[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0 && int.TryParse(parts[0], out int num))
+                            discardCnt = num;
+                        // If not a number (e.g. "one"), keep default of 1
+                    }
+                }
+
+                int discarded = gamePlay.DiscardCardsFromPlayerHand(discardCnt, true);
+                if (discarded < discardCnt)
+                {
+                    Debug.LogWarning($"[SimpleDropArea] Ace seal: need discard {discardCnt} hand card(s), only discarded {discarded}.");
+                    return false;
+                }
+            }
+
+            return true;
         }
     // 供其他腳本讀取目前區域類型
     public AreaType GetAreaType()
@@ -545,3 +1006,4 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         return NameContainsInHierarchy("bench");
     }
 }
+

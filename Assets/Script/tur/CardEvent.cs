@@ -79,21 +79,45 @@ public class CardEvent : MonoBehaviour
         try
         {
             var token = Newtonsoft.Json.Linq.JToken.Parse(json);
+            Newtonsoft.Json.Linq.JArray arr = null;
 
-            // 支援三種格式：[] 陣列、{"cards":[...]} 包裝器、{...} 單張卡片
-            Newtonsoft.Json.Linq.JArray arr;
+            // 支援四種格式：[] 陣列、{"id": {...}} ID 容器、{"cards":[...]} 包裝器、{...} 單物件
             if (token is Newtonsoft.Json.Linq.JArray directArr)
             {
+                // 格式 1: 直接陣列 [...]
                 arr = directArr;
             }
             else if (token is Newtonsoft.Json.Linq.JObject topObj)
             {
-                if (topObj["cards"] is Newtonsoft.Json.Linq.JArray wrappedArr)
+                // 嘗試格式 2: {"id": {"01": {...}, "02": {...}}}
+                if (topObj["id"] is Newtonsoft.Json.Linq.JObject idContainer)
+                {
+                    arr = new Newtonsoft.Json.Linq.JArray();
+                    foreach (var prop in idContainer.Properties())
+                    {
+                        if (prop.Value is Newtonsoft.Json.Linq.JObject cardObj)
+                        {
+                            // 將每個卡片物件加入陣列，並確保 id 被設定
+                            var cardWithId = new Newtonsoft.Json.Linq.JObject(cardObj);
+                            if (cardWithId["id"] == null)
+                                cardWithId["id"] = prop.Name; // 用 property name 作為 id
+                            arr.Add(cardWithId);
+                        }
+                    }
+                }
+                // 嘗試格式 3: {"cards": [...]}
+                else if (topObj["cards"] is Newtonsoft.Json.Linq.JArray wrappedArr)
+                {
                     arr = wrappedArr;
+                }
+                // 格式 4: 單個物件 {...}
                 else
-                    arr = new Newtonsoft.Json.Linq.JArray(token); // 單物件包成陣列
+                {
+                    arr = new Newtonsoft.Json.Linq.JArray(token);
+                }
             }
-            else
+
+            if (arr == null)
             {
                 Debug.LogWarning("[CardEvent] LoadCardDatabase: JSON 格式無法識別。");
                 return;
@@ -144,5 +168,11 @@ public class CardEvent : MonoBehaviour
         if (cardLookup.Count == 0 || !isLoaded)
             LoadCardDatabase();
     }
+
+        // 這裡可以放置當卡片被使用時的事件邏輯
+        //check card skill Text in json
+    
     
 }
+
+

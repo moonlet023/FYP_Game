@@ -17,6 +17,13 @@ public class EnemyStatusBehaviour : MonoBehaviour, IEnemyStatus
     public bool destroyOnGuardDestroyed = true;   // 前排被擊倒時銷毀此卡片
     public bool destroyOnEnemyDefeated = true;    // 本體死亡時銷毀此卡片
     public float destroyDelaySeconds = 0f;        // 銷毀延遲（可用於播放擊倒/死亡特效）
+    private GamePlay gamePlay;
+    private bool discardQueued;
+
+    void Awake()
+    {
+        gamePlay = FindObjectOfType<GamePlay>();
+    }
 
     // IEnemyStatus 介面實作
     public EnemyBattleState State => state;
@@ -75,6 +82,7 @@ public class EnemyStatusBehaviour : MonoBehaviour, IEnemyStatus
             if (debugLogs) Debug.Log("EnemyStatusBehaviour: enemy defeated");
             if (destroyOnEnemyDefeated)
             {
+                QueueDiscardIfNeeded();
                 if (debugLogs) Debug.Log("EnemyStatusBehaviour: destroying card (enemy defeated)");
                 Destroy(gameObject, destroyDelaySeconds);
             }
@@ -96,10 +104,23 @@ public class EnemyStatusBehaviour : MonoBehaviour, IEnemyStatus
             if (debugLogs) Debug.Log("EnemyStatusBehaviour: guard destroyed");
             if (destroyOnGuardDestroyed)
             {
+                QueueDiscardIfNeeded();
                 if (debugLogs) Debug.Log("EnemyStatusBehaviour: destroying card (guard destroyed)");
                 Destroy(gameObject, destroyDelaySeconds);
             }
         }
+    }
+
+    private void QueueDiscardIfNeeded()
+    {
+        if (discardQueued) return;
+        if (gamePlay == null)
+            gamePlay = FindObjectOfType<GamePlay>();
+
+        if (gamePlay == null) return;
+
+        if (gamePlay.TrySendCardGameObjectToPlayerDiscard(gameObject))
+            discardQueued = true;
     }
 
     // 便捷方法：執行一次攻擊並返回結果（使用 AttackLogic）

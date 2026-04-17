@@ -1,13 +1,61 @@
 {
-    "id": "01",
-    "name": "Spirit of Wind - eil",
-    "type": "Eif",
-    "color": "Green",
-    "cost": 1,
-    "en_spawn": 1,
-    "Act Num": 0,
-    "skill Text": "When this card is common summon, draw one card.",
-    "Atk": 1,
-    "Def": 0,
-    "image": "Assets/texture/card/01.png"
+    "id": {
+      "01": {
+        "name": "Spirit of Wind - eil",
+        "type": "Eif",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 1,
+        "en_spawn": 1,
+        "Act Num": 0,
+        "skill Text": "When this card is common summon, draw one card.",
+        "Atk": 1,
+        "Def": 0,
+        "image": "Assets/texture/card/01.png",
+        "EZcode": "common summon, draw:1"
+      },
+      "02": {
+        "name": "bright smile - ane",
+        "type": "Eif",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 1,
+        "en_spawn": 2,
+        "Act Num": 0,
+        "skill Text": "If there have more than 3 [Eif] in game, this character can earn one more green energy in start stage.",
+        "Atk": 1,
+        "Def": 0,
+        "image": "Assets/texture/card/02.png",
+        "EZcode": "elementalist, more than 3 Eif: start stage, earn:1 green energy"
+      },
+      "03": {
+        "name": "Elf Aristocracy - kay",
+        "type": "Eif",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 1,
+        "en_spawn": 2,
+        "Act Num": 1,
+        "skill Text": "(discard one Green energy) choose one of your card in attack area ATK +1",
+        "Atk": 1,
+        "Def": 0,
+        "image": "Assets/texture/card/03.png",
+        "EZcode": "Act 1 -> discard:1 green energy, choose:1 card in attack area, ATK +1"
+      },
+      "06": {
+        "name": "Queen of Elf - san",
+        "type": "Elf",
+        "is Ace": true,
+        "seal": "discard 3 Green energy, discard one hand card",
+        "color": "Green",
+        "cost": 3,
+        "en_spawn": 0,
+        "Act Num": 0,
+        "skill Text": "[seal] (discard 3 Green energy, discard one hand card), when this card summon, heal X HP, X is the number of energy. when this card is in attack area, all of your card in attack area + X ATK, X is the number of card in attack area.",
+        "Atk": 5,
+        "Def": 3,
+        "image": "Assets/texture/card/06.png",
+        "EZcode": "summon -> heal:X HP, X = energy; when in attack area -> all your card in attack area ATK +X, X = number of card in attack area"
+    }
+  }
 }

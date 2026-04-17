@@ -61,22 +61,33 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	public bool attackableOnLeftClick = true; // 左鍵選擇後可進入攻擊模式
 	private bool _isAttackMode = false;       // 當前是否在攻擊模式
 	public int selectedAttackDamage = 0;      // 外部設定的本次攻擊傷害
+	[Header("Attack Mode Feedback")]
+	public GameObject attackModeIndicatorObject; // 進入攻擊模式時顯示（例如外框/箭頭/光暈）
+	public bool pulseCardScaleInAttackMode = true;
+	public float attackModeScaleMultiplier = 1.06f;
+	public float attackModeScalePulseAmplitude = 0.03f;
+	public float attackModeScalePulseSpeed = 6f;
 	// 當此卡牌可作為攻擊目標時（例如敵方卡），將其狀態腳本指到此欄位；
 	// 不再由攻擊者持有敵方參考，而是由目標卡在被點擊時提供狀態。
 	public MonoBehaviour targetStatusBehaviour; // 實作 IEnemyStatus 的腳本（僅目標卡需要）
 
 	[Header("Card Data (Optional)")]
 	public bool autoPullAttackFromCardData = true; // 進入攻擊模式時自動讀取卡片 atk
+	public bool preferCardDatabaseById = true;      // 優先以卡片 id 向 CardEvent 查詢真實資料
+	public bool allowParentSearchForAttackData = false; // 避免抓到父節點上非本卡資料
 	public MonoBehaviour cardDataBehaviour;        // 指向卡片資料腳本（含 atk/attack/attackPower）
-	public string[] attackFieldNames = new string[] { "atk", "attack", "Attack", "attackPower", "AttackPower" };
+	public string[] attackFieldNames = new string[] { "Atk", "atk", "ATK", "attack", "Attack", "attackPower", "AttackPower", "damage", "Damage" };
 
 	private GameObject _particleInstance; // for single-spawn mode
 	private List<GameObject> _particleInstances; // for multi-spawn mode
 	private Canvas _canvas; // For coordinate conversion and raycast setup
+	private Vector3 _baseLocalScale;
 
 	void Awake()
 	{
 		if (debugLogs) Debug.Log($"leftRightClickCard: Awake start on {name}");
+		_baseLocalScale = transform.localScale;
+		SetAttackModeFeedback(false);
 		// Resolve hints first (prefab-safe): name/tag for uiRoot and rightClickPanel
 		ResolveUiRootHints();
 		EnsureUIRootAndCanvas();
@@ -99,6 +110,20 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	void OnEnable()
 	{
 		if (debugLogs) Debug.Log($"leftRightClickCard: OnEnable on {name}");
+		if (!_isAttackMode)
+		{
+			SetAttackModeFeedback(false);
+		}
+	}
+
+	void OnDisable()
+	{
+		SetAttackModeFeedback(false);
+	}
+
+	void Update()
+	{
+		UpdateAttackModeFeedback();
 	}
 
 	// 3D click support
@@ -190,40 +215,12 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	private void ResolveTargetStatusBehaviour()
 	{
 		if (targetStatusBehaviour != null) return;
-		// 先找本物件
-		var selfBehaviours = GetComponents<MonoBehaviour>();
-		for (int i = 0; i < selfBehaviours.Length; i++)
-		{
-			if (selfBehaviours[i] is IEnemyStatus)
-			{
-				targetStatusBehaviour = selfBehaviours[i];
-				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (self) -> {selfBehaviours[i].GetType().Name}");
-				return;
-			}
-		}
 
-		// 再找子物件（例如狀態腳本掛在子節點）
-		var childBehaviours = GetComponentsInChildren<MonoBehaviour>(true);
-		for (int i = 0; i < childBehaviours.Length; i++)
+		targetStatusBehaviour = EnemyStatusLocator.FindStatusBehaviourFrom(gameObject);
+		if (targetStatusBehaviour != null)
 		{
-			if (childBehaviours[i] is IEnemyStatus)
-			{
-				targetStatusBehaviour = childBehaviours[i];
-				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (child) -> {childBehaviours[i].GetType().Name}");
-				return;
-			}
-		}
-
-		// 最後嘗試父物件（有時卡牌視覺與狀態分層）
-		var parentBehaviours = GetComponentsInParent<MonoBehaviour>(true);
-		for (int i = 0; i < parentBehaviours.Length; i++)
-		{
-			if (parentBehaviours[i] != this && parentBehaviours[i] is IEnemyStatus)
-			{
-				targetStatusBehaviour = parentBehaviours[i];
-				if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour (parent) -> {parentBehaviours[i].GetType().Name}");
-				return;
-			}
+			if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour -> {targetStatusBehaviour.GetType().Name}");
+			return;
 		}
 
 		if (debugLogs) Debug.Log("leftRightClickCard: no IEnemyStatus found on self/children/parents; this card won't act as a target");
@@ -233,6 +230,14 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	{
 		if (!autoPullAttackFromCardData) return;
 		int resolved;
+
+		if (preferCardDatabaseById && TryResolveAttackFromCardDatabaseById(out resolved))
+		{
+			selectedAttackDamage = resolved;
+			if (debugLogs) Debug.Log($"leftRightClickCard: attack damage resolved from CardEvent by id -> {resolved}");
+			return;
+		}
+
 		if (TryResolveAttackFromBehaviour(cardDataBehaviour, out resolved))
 		{
 			selectedAttackDamage = resolved;
@@ -240,10 +245,10 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 			return;
 		}
 
-		// 依序在本物件、子物件、父物件搜尋
+		// 依序在本物件、子物件搜尋（父物件搜尋預設關閉，避免誤抓其他卡資料）
 		if (TryResolveAttackFromBehaviours(GetComponents<MonoBehaviour>(), out resolved) ||
 			TryResolveAttackFromBehaviours(GetComponentsInChildren<MonoBehaviour>(true), out resolved) ||
-			TryResolveAttackFromBehaviours(GetComponentsInParent<MonoBehaviour>(true), out resolved))
+			(allowParentSearchForAttackData && TryResolveAttackFromBehaviours(GetComponentsInParent<MonoBehaviour>(true), out resolved)))
 		{
 			selectedAttackDamage = resolved;
 			if (debugLogs) Debug.Log($"leftRightClickCard: attack damage auto-resolved -> {resolved}");
@@ -252,6 +257,60 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		{
 			Debug.Log("leftRightClickCard: failed to resolve attack damage from card data (fallback to existing selectedAttackDamage)");
 		}
+	}
+
+	// 提供外部（例如放置/光環變化）主動刷新此卡目前攻擊值。
+	public void RefreshAttackDamageFromData()
+	{
+		ResolveSelectedAttackDamageFromCardData();
+	}
+
+	private bool TryResolveAttackFromCardDatabaseById(out int value)
+	{
+		value = 0;
+		string id = ResolveThisCardId();
+		if (string.IsNullOrEmpty(id)) return false;
+
+		var cardEvent = FindObjectOfType<CardEvent>();
+		if (cardEvent == null)
+		{
+			if (debugLogs) Debug.Log("leftRightClickCard: CardEvent not found; skip id-based attack resolve");
+			return false;
+		}
+
+		if (!cardEvent.TryGetCardById(id, out var data) || data == null)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: CardEvent miss for id={id}");
+			return false;
+		}
+
+		int baseAttack = Mathf.Max(0, data.Atk);
+		var gamePlay = FindObjectOfType<GamePlay>();
+		value = gamePlay != null ? gamePlay.GetPlayerAttackWithBuff(id, baseAttack) : baseAttack;
+		return true;
+	}
+
+	private string ResolveThisCardId()
+	{
+		var simpleSelf = GetComponent<SimpleCardData>();
+		if (simpleSelf != null && !string.IsNullOrWhiteSpace(simpleSelf.cardId)) return simpleSelf.cardId.Trim();
+
+		var cardDataSelf = GetComponent<global::CardData>();
+		if (cardDataSelf != null && !string.IsNullOrWhiteSpace(cardDataSelf.id)) return cardDataSelf.id.Trim();
+
+		var identitySelf = GetComponent<CardIdentity>();
+		if (identitySelf != null && !string.IsNullOrWhiteSpace(identitySelf.Id)) return identitySelf.Id.Trim();
+
+		var simpleChild = GetComponentInChildren<SimpleCardData>(true);
+		if (simpleChild != null && !string.IsNullOrWhiteSpace(simpleChild.cardId)) return simpleChild.cardId.Trim();
+
+		var cardDataChild = GetComponentInChildren<global::CardData>(true);
+		if (cardDataChild != null && !string.IsNullOrWhiteSpace(cardDataChild.id)) return cardDataChild.id.Trim();
+
+		var identityChild = GetComponentInChildren<CardIdentity>(true);
+		if (identityChild != null && !string.IsNullOrWhiteSpace(identityChild.Id)) return identityChild.Id.Trim();
+
+		return null;
 	}
 
 	private bool TryResolveAttackFromBehaviours(MonoBehaviour[] behaviours, out int value)
@@ -270,9 +329,10 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		if (mb == null) return false;
 		var t = mb.GetType();
 		// 先找欄位
+		const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.IgnoreCase;
 		for (int i = 0; i < attackFieldNames.Length; i++)
 		{
-			var f = t.GetField(attackFieldNames[i], BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+			var f = t.GetField(attackFieldNames[i], flags);
 			if (f != null)
 			{
 				var obj = f.GetValue(mb);
@@ -283,7 +343,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		// 再找屬性
 		for (int i = 0; i < attackFieldNames.Length; i++)
 		{
-			var p = t.GetProperty(attackFieldNames[i], BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+			var p = t.GetProperty(attackFieldNames[i], flags);
 			if (p != null && p.CanRead)
 			{
 				var obj = p.GetValue(mb, null);
@@ -358,6 +418,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 
 		if (newState)
 		{
+			SyncRightClickPanelContentFromCurrentCard();
 			EnsurePanelVisible();
 			if (debugLogs)
 			{
@@ -368,6 +429,92 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 				}
 			}
 		}
+	}
+
+	private void SyncRightClickPanelContentFromCurrentCard()
+	{
+		if (rightClickPanel == null) return;
+
+		string cardId = ResolveThisCardId();
+		bool updated = false;
+
+		if (!string.IsNullOrWhiteSpace(cardId))
+		{
+			updated = TryApplyCardIdToInfoPanel(cardId.Trim());
+		}
+
+		if (!updated)
+		{
+			updated = TryCopyCurrentCardVisualToInfoPanel();
+		}
+
+		if (debugLogs)
+			Debug.Log($"leftRightClickCard: SyncRightClickPanelContent updated={updated}, cardId={cardId}");
+	}
+
+	private bool TryApplyCardIdToInfoPanel(string cardId)
+	{
+		if (rightClickPanel == null || string.IsNullOrWhiteSpace(cardId)) return false;
+
+		bool applied = false;
+
+		var panelCardData = rightClickPanel.GetComponent<global::CardData>();
+		if (panelCardData == null)
+			panelCardData = rightClickPanel.GetComponentInChildren<global::CardData>(true);
+
+		if (panelCardData != null)
+		{
+			panelCardData.SetCardId(cardId);
+			applied = true;
+		}
+
+		var panelSimple = rightClickPanel.GetComponent<SimpleCardData>();
+		if (panelSimple == null)
+			panelSimple = rightClickPanel.GetComponentInChildren<SimpleCardData>(true);
+		if (panelSimple != null)
+		{
+			panelSimple.cardId = cardId;
+			applied = true;
+		}
+
+		var panelIdentity = rightClickPanel.GetComponent<CardIdentity>();
+		if (panelIdentity == null)
+			panelIdentity = rightClickPanel.GetComponentInChildren<CardIdentity>(true);
+		if (panelIdentity != null)
+		{
+			panelIdentity.Id = cardId;
+			applied = true;
+		}
+
+		return applied;
+	}
+
+	private bool TryCopyCurrentCardVisualToInfoPanel()
+	{
+		if (rightClickPanel == null) return false;
+
+		// Search RawImages but skip any that live on the rightClickPanel itself
+		foreach (var raw in GetComponentsInChildren<RawImage>(true))
+		{
+			if (raw == rightClickPanel) continue;          // 不要把面板自己當來源
+			if (raw.texture == null) continue;
+			rightClickPanel.texture = raw.texture;
+			rightClickPanel.uvRect = raw.uvRect;
+			rightClickPanel.color = raw.color;
+			return true;
+		}
+
+		// Search Images but skip Button graphic images (Button component on same GameObject)
+		foreach (var img in GetComponentsInChildren<Image>(true))
+		{
+			if (img.GetComponent<Button>() != null) continue; // 跳過 Button 的背景 Image
+			if (img.sprite == null) continue;
+			rightClickPanel.texture = img.sprite.texture;
+			rightClickPanel.color = img.color;
+			return true;
+		}
+
+		return false;
 	}
 
 	private GameObject SpawnEffectAroundCard()
@@ -998,20 +1145,56 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	// --- Combat helpers ---
 	private IEnemyStatus GetEnemyStatusOrNull()
 	{
-		// 此方法已不再使用固定敵方參考；保留以防外部仍呼叫。
-		return null;
+		if (targetStatusBehaviour != null)
+		{
+			var status = EnemyStatusLocator.CoerceStatus(targetStatusBehaviour);
+			if (status != null) return status;
+		}
+
+		ResolveTargetStatusBehaviour();
+		return EnemyStatusLocator.CoerceStatus(targetStatusBehaviour);
+	}
+
+	private void SetAttackModeFeedback(bool enabled)
+	{
+		if (attackModeIndicatorObject != null)
+		{
+			attackModeIndicatorObject.SetActive(enabled);
+		}
+
+		if (!enabled)
+		{
+			transform.localScale = _baseLocalScale;
+		}
+	}
+
+	private void UpdateAttackModeFeedback()
+	{
+		if (!_isAttackMode || !pulseCardScaleInAttackMode)
+		{
+			if (!_isAttackMode && transform.localScale != _baseLocalScale)
+			{
+				transform.localScale = _baseLocalScale;
+			}
+			return;
+		}
+
+		float pulse = 1f + attackModeScalePulseAmplitude * Mathf.Sin(Time.unscaledTime * attackModeScalePulseSpeed);
+		transform.localScale = _baseLocalScale * (attackModeScaleMultiplier * pulse);
 	}
 
 	public void EnterAttackMode()
 	{
 		if (!attackableOnLeftClick) return;
 		_isAttackMode = true;
+		SetAttackModeFeedback(true);
 		if (debugLogs) Debug.Log("leftRightClickCard: attack mode enabled");
 	}
 
 	public void ExitAttackMode()
 	{
 		_isAttackMode = false;
+		SetAttackModeFeedback(false);
 		if (debugLogs) Debug.Log("leftRightClickCard: attack mode disabled");
 	}
 
