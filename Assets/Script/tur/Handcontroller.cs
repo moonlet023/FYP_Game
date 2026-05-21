@@ -421,15 +421,75 @@ public class Handcontroller : MonoBehaviour
         for (int i = 0; i < n; i++)
         {
             var child = handRT.GetChild(i).gameObject;
-            var simpleData = child.GetComponent<SimpleCardData>();
-            var viewData = child.GetComponent<global::CardData>();
-            string id = null;
-            if (simpleData != null && !string.IsNullOrEmpty(simpleData.cardId)) id = simpleData.cardId;
-            else if (viewData != null && !string.IsNullOrEmpty(viewData.cardName)) id = viewData.cardName;
-            else id = child.name;
-            uiHandRecord.Add(id);
+            string label = ResolveHandCardLabel(child);
+            uiHandRecord.Add(label);
         }
         Debug.Log("Handcontroller(UI): hand = [" + string.Join(", ", uiHandRecord) + "]");
+    }
+
+    private string ResolveHandCardLabel(GameObject child)
+    {
+        if (child == null) return "<null>";
+
+        var dataSelf = child.GetComponent<global::CardData>();
+        if (dataSelf != null)
+        {
+            if (!string.IsNullOrWhiteSpace(dataSelf.cardName)) return dataSelf.cardName.Trim();
+        }
+
+        var dataChild = child.GetComponentInChildren<global::CardData>(true);
+        if (dataChild != null)
+        {
+            if (!string.IsNullOrWhiteSpace(dataChild.cardName)) return dataChild.cardName.Trim();
+        }
+
+        string id = null;
+        var simpleSelf = child.GetComponent<SimpleCardData>();
+        if (simpleSelf != null && !string.IsNullOrWhiteSpace(simpleSelf.cardId))
+            id = simpleSelf.cardId.Trim();
+
+        if (string.IsNullOrWhiteSpace(id) && dataSelf != null && !string.IsNullOrWhiteSpace(dataSelf.id))
+            id = dataSelf.id.Trim();
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            var identitySelf = child.GetComponent<CardIdentity>();
+            if (identitySelf != null && !string.IsNullOrWhiteSpace(identitySelf.Id))
+                id = identitySelf.Id.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            var simpleChild = child.GetComponentInChildren<SimpleCardData>(true);
+            if (simpleChild != null && !string.IsNullOrWhiteSpace(simpleChild.cardId))
+                id = simpleChild.cardId.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(id) && dataChild != null && !string.IsNullOrWhiteSpace(dataChild.id))
+            id = dataChild.id.Trim();
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            var identityChild = child.GetComponentInChildren<CardIdentity>(true);
+            if (identityChild != null && !string.IsNullOrWhiteSpace(identityChild.Id))
+                id = identityChild.Id.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            var ce = FindObjectOfType<CardEvent>();
+            if (ce != null && ce.TryGetCardById(id, out var cardData) && cardData != null && !string.IsNullOrWhiteSpace(cardData.Name))
+                return cardData.Name.Trim();
+
+            return id;
+        }
+
+        string rawName = child.name ?? string.Empty;
+        string cleanedName = rawName.Replace("(Clone)", string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cleanedName))
+            return "<unknown>";
+
+        return cleanedName;
     }
 
     private IEnumerator AnimateToAnchored(RectTransform rt, Vector2 target, float duration)

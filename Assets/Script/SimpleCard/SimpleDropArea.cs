@@ -48,6 +48,7 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
     private Transform Root => contentRoot != null ? contentRoot : transform;
     private bool _hasOccupantInitialized;
     private bool _lastHasOccupant;
+    private EnemyStatusBehaviour _occupantStatusBehaviour;
 
     // 判斷是否為應忽略的 UI 子物件（例如攻/防圖示）
     private bool IsIgnoredChild(Transform child)
@@ -122,11 +123,13 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         }
 
         RefreshModeDisplayVisibility(force: true);
+        UpdateOccupantStateSubscription(force: true);
     }
 
     void Update()
     {
         RefreshModeDisplayVisibility(force: false);
+        UpdateOccupantStateSubscription(force: false);
     }
 
     public void OnDrop(PointerEventData eventData)
@@ -288,12 +291,61 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         // 通知這次拖曳已成功放置，避免 Draggable 還原
         draggable.wasDroppedThisDrag = true;
 
+        // 檢查是否為事件卡，若是則觸發 EventUse 並立即放入棄牌區
+        if (cardEvent == null) cardEvent = ResolveFromScene<CardEvent>();
+        if (debugLogs) Debug.Log($"[SimpleDropArea] OnDrop: droppedCardId={droppedCardId}, cardEvent={cardEvent}, triggerCardEffectsOnDrop={triggerCardEffectsOnDrop}, cardrunTime={cardrunTime}");
+        
+        if (cardEvent != null && !string.IsNullOrWhiteSpace(droppedCardId))
+        {
+            bool foundCard = cardEvent.TryGetCardById(droppedCardId, out var cardData);
+            if (debugLogs) Debug.Log($"[SimpleDropArea] TryGetCardById({droppedCardId}): found={foundCard}, cardData.IsEvent={cardData?.IsEvent}");
+            
+            if (foundCard && cardData.IsEvent)
+            {
+                if (debugLogs) Debug.Log($"[SimpleDropArea] Event card detected: {droppedCardId}, name={cardData.Name}, triggering EventUse");
+                
+                if (triggerCardEffectsOnDrop)
+                {
+                    if (cardrunTime != null)
+                    {
+                        cardrunTime.TriggerCardEffect(droppedCardId, CardEffectEvent.EventType.EventUse);
+                    }
+                    else
+                    {
+                        Debug.LogError($"[SimpleDropArea] cardrunTime is null! Cannot trigger event card effect for {droppedCardId}");
+                    }
+                }
+                else
+                {
+                    if (debugLogs) Debug.Log($"[SimpleDropArea] triggerCardEffectsOnDrop is false, skipping effect trigger");
+                }
+
+                // 事件卡使用後立即移入棄牌區
+                if (gamePlay != null)
+                {
+                    GameObject cardToDiscard = Root.childCount > 0 ? Root.GetChild(0).gameObject : dragged;
+                    if (debugLogs) Debug.Log($"[SimpleDropArea] Sending event card to discard: {cardToDiscard.name}");
+                    gamePlay.TrySendCardGameObjectToPlayerDiscard(cardToDiscard);
+                    if (Root.childCount > 0)
+                    {
+                        Destroy(Root.GetChild(0).gameObject);
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"[SimpleDropArea] gamePlay is null! Cannot send event card to discard");
+                }
+                
+                RefreshModeDisplayVisibility(force: true);
+                return;  // Event card処理完了，提早返回
+            }
+        }
+
+        // 非事件卡的處理
         if (triggerCardEffectsOnDrop)
         {
             TriggerDropEffects(droppedCardId);
         }
-
-        RefreshModeDisplayVisibility(force: true);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -527,9 +579,22 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
         cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.Placed);
 
         // Attack 區內的成功放置視為一次 common summon 事件。
+        // 但若此卡是由效果從牌堆召喚而來，跳過 CommonSummon（消耗一次標記）。
         if (IsAttackArea())
         {
-            cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.CommonSummon);
+            bool isEffectSummoned = false;
+            if (GamePlay.EffectSummonedCardIds.TryGetValue(cardId, out int pendingCount) && pendingCount > 0)
+            {
+                isEffectSummoned = true;
+                if (pendingCount == 1)
+                    GamePlay.EffectSummonedCardIds.Remove(cardId);
+                else
+                    GamePlay.EffectSummonedCardIds[cardId] = pendingCount - 1;
+                Debug.Log($"[SimpleDropArea] {cardId} 由效果召喚，跳過 CommonSummon");
+            }
+
+            if (!isEffectSummoned)
+                cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.CommonSummon);
         }
 
         RefreshPlayerAttackAreaAttackValues();
@@ -619,6 +684,54 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
             areaModeDisplay.ShowDefault();
             if (debugLogs) Debug.Log($"SimpleDropArea: show default mode display on {name} (has card)");
         }
+        UpdateOccupantStateSubscription(force: true);
+    }
+
+    private void UpdateOccupantStateSubscription(bool force)
+    {
+        if (areaModeDisplay == null) return;
+
+        var statusBehaviour = GetOccupantStatusBehaviour();
+        if (!force && statusBehaviour == _occupantStatusBehaviour) return;
+
+        if (_occupantStatusBehaviour != null)
+        {
+            _occupantStatusBehaviour.OnStateChanged -= OnOccupantStateChanged;
+            _occupantStatusBehaviour = null;
+        }
+
+        _occupantStatusBehaviour = statusBehaviour;
+        if (_occupantStatusBehaviour != null)
+        {
+            _occupantStatusBehaviour.OnStateChanged += OnOccupantStateChanged;
+            if (debugLogs) Debug.Log($"SimpleDropArea: subscribed to occupant state changes on {name} -> {_occupantStatusBehaviour.name}");
+        }
+    }
+
+    private EnemyStatusBehaviour GetOccupantStatusBehaviour()
+    {
+        var r = Root;
+        if (r == null) return null;
+
+        var statuses = r.GetComponentsInChildren<EnemyStatusBehaviour>(true);
+        for (int i = 0; i < statuses.Length; i++)
+        {
+            var status = statuses[i];
+            if (status == null) continue;
+            if (IsIgnoredChild(status.transform)) continue;
+            if (status.gameObject == gameObject) continue;
+            return status;
+        }
+        return null;
+    }
+
+    private void OnOccupantStateChanged(EnemyBattleState newState)
+    {
+        if (areaModeDisplay == null) return;
+        bool defense = newState == EnemyBattleState.Defense;
+        areaModeDisplay.SetMode(defense);
+        areaModeDisplay.Show();
+        if (debugLogs) Debug.Log($"SimpleDropArea: occupant changed state -> {newState} on {name}");
     }
 
     private void CopyCardIdentity(GameObject source, GameObject target)
@@ -762,6 +875,11 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
     // 由 GamePlay 在玩家回合開始時呼叫：依本 Bench 區內每張卡片的 en_spawn 產生能量
     public int GrantBenchEnergyFromPlacedCardsAtTurnStart()
     {
+        return GrantBenchEnergyFromPlacedCardsAtTurnStart(true);
+    }
+
+    public int GrantBenchEnergyFromPlacedCardsAtTurnStart(bool isPlayer)
+    {
         if (!IsBenchArea()) return 0;
 
         if (cardEvent == null) cardEvent = ResolveFromScene<CardEvent>();
@@ -794,11 +912,15 @@ public class SimpleDropArea : MonoBehaviour, IDropHandler, IPointerEnterHandler,
                 continue;
             }
 
-            gamePlay.AddPlayerEnergy(color, data.EnSpawn);
+            if (isPlayer)
+                gamePlay.AddPlayerEnergy(color, data.EnSpawn);
+            else
+                gamePlay.AddAIEnergy(color, data.EnSpawn);
+
             totalGenerated += data.EnSpawn;
 
             if (debugLogs)
-                Debug.Log($"[SimpleDropArea] TurnStart Bench 產能：area={name} id={id} color={color} en_spawn={data.EnSpawn}");
+                Debug.Log($"[SimpleDropArea] TurnStart Bench 產能：area={name} id={id} color={color} en_spawn={data.EnSpawn} forPlayer={isPlayer}");
         }
 
         return totalGenerated;

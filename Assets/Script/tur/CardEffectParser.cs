@@ -63,6 +63,27 @@ public static class CardEffectParser
             if (string.IsNullOrWhiteSpace(part))
                 continue;
 
+            // 檢查是否包含 [Guard]，並將其存儲在 Conditions 中
+            if (part.Contains("[Guard]", System.StringComparison.OrdinalIgnoreCase) || 
+                part.Contains("[guard]", System.StringComparison.OrdinalIgnoreCase))
+            {
+                instruction.Conditions["is_guard"] = "true";
+                part = StripEventTokensForGuard(part);
+                if (string.IsNullOrWhiteSpace(part))
+                    continue;
+            }
+
+            // 檢查是否包含 [Limit]，並將其存儲在 Conditions 中
+            if (part.Contains("[Limit]", System.StringComparison.OrdinalIgnoreCase) || 
+                part.Contains("[limit]", System.StringComparison.OrdinalIgnoreCase))
+            {
+                instruction.Conditions["is_limit"] = "true";
+                part = Regex.Replace(part, @"\[limit\]", string.Empty, RegexOptions.IgnoreCase);
+                part = part.Trim();
+                if (string.IsNullOrWhiteSpace(part))
+                    continue;
+            }
+
             if (instruction.TriggerEvent == CardEffectEvent.EventType.None && TryParseEventTypeFromText(part, out var evt))
             {
                 instruction.TriggerEvent = evt;
@@ -230,6 +251,12 @@ public static class CardEffectParser
             return true;
         }
 
+        if (normalized.Contains("event_use") || normalized.Contains("eventuse") || normalized.Contains("event use"))
+        {
+            eventType = CardEffectEvent.EventType.EventUse;
+            return true;
+        }
+
         return false;
     }
 
@@ -243,13 +270,30 @@ public static class CardEffectParser
         {
             "common summon", "special summon", "turn start", "turn end",
             "start stage", "act", "attack", "defend", "placed", "place",
-            "destroyed", "drawn", "discarded"
+            "destroyed", "drawn", "discarded", "event use", "event_use"
         };
 
         for (int i = 0; i < eventTokens.Length; i++)
             result = Regex.Replace(result, Regex.Escape(eventTokens[i]), string.Empty, RegexOptions.IgnoreCase);
 
+        // 移除括號內的標記（如 [Limit], [Guard] 等）
+        result = Regex.Replace(result, @"\[.*?\]", string.Empty, RegexOptions.IgnoreCase);
         result = result.Replace("_", " ").Trim(' ', ':', '-', '>');
+        return result;
+    }
+
+    private static string StripEventTokensForGuard(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return string.Empty;
+
+        string result = token;
+        string[] guardTokens = { "[guard]", "[Guard]", "[Limit]", "[limit]" };
+
+        for (int i = 0; i < guardTokens.Length; i++)
+            result = Regex.Replace(result, Regex.Escape(guardTokens[i]), string.Empty, RegexOptions.IgnoreCase);
+
+        result = result.Trim();
         return result;
     }
 
@@ -260,6 +304,16 @@ public static class CardEffectParser
     {
         if (string.IsNullOrWhiteSpace(actionStr))
             return null;
+
+        // 檢查是否為 destroy_opponent_card 直接文本
+        if (actionStr.ToLowerInvariant().Contains("destroy") && actionStr.ToLowerInvariant().Contains("opponent"))
+        {
+            return new EffectAction
+            {
+                ActionType = "destroy_opponent_card",
+                Parameters = new Dictionary<string, string>()
+            };
+        }
 
         var atkPlus = Regex.Match(actionStr, @"atk\s*\+\s*(\d+)", RegexOptions.IgnoreCase);
         if (atkPlus.Success)
@@ -343,6 +397,18 @@ public static class CardEffectParser
 
         if (action == "atk" || action == "attack_up" || action == "buff_atk")
             return "buff_atk";
+
+        if (action == "find_and_summon" || action == "find_summon")
+            return "find_and_summon";
+
+        if (action == "choose_opponent_bounce")
+            return "choose_opponent_bounce";
+
+        if (action == "destroy_opponent_card" || action == "destroyone_opponent_card" || action == "destroy_opponent")
+            return "destroy_opponent_card";
+
+        if (action == "shuffle_hand_draw" || action == "shuffle_hand" || action == "reshuffle_draw")
+            return "shuffle_hand_draw";
 
         return action;
     }

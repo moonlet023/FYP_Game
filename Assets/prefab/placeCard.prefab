@@ -18,6 +18,8 @@ GameObject:
   - component: {fileID: -7195785508686413647}
   - component: {fileID: -5413622298589353721}
   - component: {fileID: -2708813282971208218}
+  - component: {fileID: -1621027177838593782}
+  - component: {fileID: -6336826693215097217}
   m_Layer: 5
   m_Name: placeCard
   m_TagString: Untagged
@@ -95,7 +97,7 @@ MonoBehaviour:
   spawnMultipleAroundCard: 1
   edgePoints: 8
   uiOutwardOffset: 8
-  autoDestroyEffects: 0
+  autoDestroyEffects: 1
   autoDestroySeconds: 1.2
   bringEffectToFront: 1
   effectSortingOrder: 5000
@@ -107,7 +109,7 @@ MonoBehaviour:
   uiRootObjectName: 
   uiRootTag: 
   fallbackToAnyCanvasRoot: 1
-  rightClickPanel: {fileID: 8168218619190848892, guid: d1c7ce83ef6a4404ca03b5945bedadb9, type: 3}
+  rightClickPanel: {fileID: 0}
   rightClickPanelName: CardZoom
   rightClickPanelTag: Zoom
   rightClickPanelPrefab: {fileID: 337241894184480945, guid: d1c7ce83ef6a4404ca03b5945bedadb9, type: 3}
@@ -126,9 +128,17 @@ MonoBehaviour:
   attackModeScalePulseAmplitude: 0.03
   attackModeScalePulseSpeed: 6
   targetStatusBehaviour: {fileID: 499434278577840679, guid: 38756cc3f8804d64db3514497c19d8d2, type: 3}
+  allowStateSwipeToggle: 1
+  horizontalSwipeDistanceThreshold: 100
+  horizontalToVerticalSwipeRatio: 1.5
+  allowVisualToggleWithoutStatus: 1
+  rotateCardOnStateToggle: 1
+  rotationTarget: {fileID: 0}
+  defenseRotationAngle: 90
+  areaModeDisplay: {fileID: 0}
   autoPullAttackFromCardData: 1
   preferCardDatabaseById: 1
-  allowParentSearchForAttackData: 0
+  allowParentSearchForAttackData: 1
   cardDataBehaviour: {fileID: 8130607095968984857}
   attackFieldNames:
   - atk
@@ -155,11 +165,15 @@ MonoBehaviour:
   skillText: 
   Atk: 0
   Def: 0
+  imagePath: 
   overrideFromCode: 0
   nameText: {fileID: 0}
   skillsText: {fileID: 0}
   atkText: {fileID: 0}
   defText: {fileID: 0}
+  cardRawImage: {fileID: 0}
+  cardSpriteImage: {fileID: 0}
+  cardImage: 
   Act1: {fileID: 0}
   Act2: {fileID: 0}
 --- !u!114 &2963757432565093311
@@ -224,3 +238,43 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   id: 
+--- !u!223 &-1621027177838593782
+Canvas:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_RenderMode: 2
+  m_Camera: {fileID: 0}
+  m_PlaneDistance: 100
+  m_PixelPerfect: 0
+  m_ReceivesEvents: 1
+  m_OverrideSorting: 0
+  m_OverridePixelPerfect: 0
+  m_SortingBucketNormalizedSize: 0
+  m_VertexColorAlwaysGammaSpace: 0
+  m_AdditionalShaderChannelsFlag: 0
+  m_UpdateRectTransformForStandalone: 0
+  m_SortingLayerID: 0
+  m_SortingOrder: 0
+  m_TargetDisplay: 0
+--- !u!114 &-6336826693215097217
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4871206283626060871}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_IgnoreReversedGraphics: 1
+  m_BlockingObjects: 0
+  m_BlockingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295

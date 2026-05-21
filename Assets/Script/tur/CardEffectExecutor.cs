@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -8,6 +9,7 @@ public class CardEffectExecutor
 {
     private readonly GamePlay gamePlayRef;
     private readonly CardEvent cardEventRef;
+    private bool lastDiscardSucceeded = true;
 
     public CardEffectExecutor(GamePlay gamePlayRef, CardEvent cardEventRef = null)
     {
@@ -43,8 +45,76 @@ public class CardEffectExecutor
         Debug.Log($"[CardEffectExecutor] Executing {instruction.Actions.Count} actions for card {cardId}");
         CardEffectTrace.Push($"ExecuteInstruction: card={cardId}, actions={instruction.Actions.Count}");
 
+        // 每次執行一組指令前重置，供後續連鎖動作（例如 discard -> find_and_summon）判斷。
+        lastDiscardSucceeded = true;
+
+        // 需要玩家手動選牌棄置時，改走協程保持動作順序（如 discard -> find_and_summon）。
+        if (ContainsHandDiscardAction(instruction))
+        {
+            if (gamePlayRef == null)
+            {
+                Debug.LogError("[CardEffectExecutor] GamePlay reference is null, cannot run interactive discard flow");
+                return;
+            }
+
+            gamePlayRef.StartCoroutine(ExecuteInstructionCoroutine(instruction, cardId, dynamicValue));
+            return;
+        }
+
         foreach (var action in instruction.Actions)
             ExecuteAction(action, cardId, dynamicValue);
+    }
+
+    private static bool ContainsHandDiscardAction(CardEffectParser.EffectInstruction instruction)
+    {
+        if (instruction?.Actions == null || instruction.Actions.Count == 0)
+            return false;
+
+        for (int i = 0; i < instruction.Actions.Count; i++)
+        {
+            var a = instruction.Actions[i];
+            if (a == null || string.IsNullOrWhiteSpace(a.ActionType))
+                continue;
+
+            if (string.Equals(a.ActionType.Trim(), "discard", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private IEnumerator ExecuteInstructionCoroutine(CardEffectParser.EffectInstruction instruction, string cardId, int dynamicValue)
+    {
+        for (int i = 0; i < instruction.Actions.Count; i++)
+        {
+            var action = instruction.Actions[i];
+            if (action == null)
+                continue;
+
+            string actionType = action.ActionType != null ? action.ActionType.Trim().ToLowerInvariant() : string.Empty;
+            if (actionType == "discard")
+            {
+                int discardCount = GetIntParam(action, "param0", 1, dynamicValue);
+                var discardTask = gamePlayRef.RequestInteractiveDiscardAsync(discardCount);
+                yield return new WaitUntil(() => discardTask.IsCompleted);
+
+                if (discardTask.IsFaulted)
+                {
+                    lastDiscardSucceeded = false;
+                    Debug.LogWarning("[CardEffectExecutor] Interactive discard failed due to task fault");
+                    CardEffectTrace.Push("Discard result: interactive discard faulted");
+                    continue;
+                }
+
+                int discarded = discardTask.Result;
+                lastDiscardSucceeded = discarded >= discardCount;
+                Debug.Log($"[CardEffectExecutor] Discard (interactive) executed: requested={discardCount}, discarded={discarded}");
+                CardEffectTrace.Push($"Discard result: requested={discardCount}, discarded={discarded}");
+                continue;
+            }
+
+            ExecuteAction(action, cardId, dynamicValue);
+        }
     }
 
     private bool EvaluateConditions(CardEffectParser.EffectInstruction instruction, CardEffectEvent.CardEffectContext context)
@@ -148,7 +218,25 @@ public class CardEffectExecutor
                 if (!cardEventRef.TryGetCardById(cardId, out var data) || data == null)
                     continue;
 
-                if (string.Equals((data.Type ?? string.Empty).Trim(), typeName.Trim(), System.StringComparison.OrdinalIgnoreCase))
+                bool typeMatched = false;
+                if (data.Types != null && data.Types.Count > 0)
+                {
+                    for (int t = 0; t < data.Types.Count; t++)
+                    {
+                        string oneType = data.Types[t];
+                        if (string.Equals((oneType ?? string.Empty).Trim(), typeName.Trim(), System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            typeMatched = true;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    typeMatched = string.Equals((data.Type ?? string.Empty).Trim(), typeName.Trim(), System.StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (typeMatched)
                     count++;
             }
         }
@@ -219,6 +307,22 @@ public class CardEffectExecutor
                 ExecuteSummon(action, cardId, dynamicValue);
                 break;
 
+            case "find_and_summon":
+                ExecuteFindAndSummon(action, cardId, dynamicValue);
+                break;
+
+            case "choose_opponent_bounce":
+                ExecuteChooseOpponentBounce(action, cardId);
+                break;
+
+            case "destroy_opponent_card":
+                ExecuteDestroyOpponentCard(action, cardId);
+                break;
+
+            case "shuffle_hand_draw":
+                ExecuteShuffleHandDraw(action, cardId, dynamicValue);
+                break;
+
             default:
                 Debug.LogWarning($"[CardEffectExecutor] Unknown action type: {action.ActionType}");
                 CardEffectTrace.Push($"Unknown action: {action.ActionType}");
@@ -281,6 +385,7 @@ public class CardEffectExecutor
         }
 
         int discarded = gamePlayRef.DiscardCardsFromPlayerHand(discardCount, true);
+        lastDiscardSucceeded = discarded >= discardCount;
         Debug.Log($"[CardEffectExecutor] Discard executed: requested={discardCount}, discarded={discarded}");
         CardEffectTrace.Push($"Discard result: requested={discardCount}, discarded={discarded}");
     }
@@ -352,9 +457,89 @@ public class CardEffectExecutor
 
     private void ExecuteSummon(CardEffectParser.EffectAction action, string cardId, int dynamicValue = 0)
     {
-        string targetCardId = action.Parameters.GetValueOrDefault("param0", null);
-        Debug.Log($"[CardEffectExecutor] Summon: {targetCardId}");
-        // TODO: 實現召喚邏輯
+        string targetCardName = action.Parameters.GetValueOrDefault("param0", null);
+        if (string.IsNullOrWhiteSpace(targetCardName))
+        {
+            Debug.LogWarning("[CardEffectExecutor] summon: no target card name in params");
+            return;
+        }
+        if (gamePlayRef != null)
+        {
+            string foundId = gamePlayRef.FindAndDrawCardFromDeckByName(targetCardName, cardEventRef);
+            Debug.Log($"[CardEffectExecutor] summon: result={foundId ?? "not found"}");
+            CardEffectTrace.Push($"Summon '{targetCardName}': {(foundId != null ? "drew to hand" : "not found")}");
+        }
+    }
+
+    private void ExecuteFindAndSummon(CardEffectParser.EffectAction action, string cardId, int dynamicValue = 0)
+    {
+        if (gamePlayRef == null)
+        {
+            Debug.LogError("[CardEffectExecutor] GamePlay reference is null, find_and_summon skipped");
+            return;
+        }
+
+        if (!lastDiscardSucceeded)
+        {
+            Debug.Log("[CardEffectExecutor] find_and_summon skipped: previous discard action did not succeed");
+            CardEffectTrace.Push("find_and_summon skipped: discard failed");
+            return;
+        }
+
+        string targetCardName = action.Parameters.GetValueOrDefault("param0", null);
+        if (string.IsNullOrWhiteSpace(targetCardName))
+        {
+            Debug.LogWarning("[CardEffectExecutor] find_and_summon: no target card name in params");
+            CardEffectTrace.Push("find_and_summon skipped: no card name");
+            return;
+        }
+
+        string foundId = gamePlayRef.FindAndSummonCardFromDeckByName(targetCardName, cardEventRef);
+        if (!string.IsNullOrEmpty(foundId))
+        {
+            Debug.Log($"[CardEffectExecutor] find_and_summon: found and summoned '{targetCardName}' (id={foundId})");
+            CardEffectTrace.Push($"find_and_summon: summoned '{targetCardName}' id={foundId}");
+        }
+        else
+        {
+            Debug.Log($"[CardEffectExecutor] find_and_summon: '{targetCardName}' not found in deck");
+            CardEffectTrace.Push($"find_and_summon: '{targetCardName}' not in deck");
+        }
+    }
+
+    private void ExecuteChooseOpponentBounce(CardEffectParser.EffectAction action, string cardId)
+    {
+        if (gamePlayRef == null)
+        {
+            Debug.LogError("[CardEffectExecutor] GamePlay reference is null, choose_opponent_bounce skipped");
+            return;
+        }
+        gamePlayRef.StartChooseOpponentBounceEffect(cardId, cardEventRef);
+        CardEffectTrace.Push($"choose_opponent_bounce: started for attacker={cardId}");
+    }
+
+    private void ExecuteDestroyOpponentCard(CardEffectParser.EffectAction action, string cardId)
+    {
+        if (gamePlayRef == null)
+        {
+            Debug.LogError("[CardEffectExecutor] GamePlay reference is null, destroy_opponent_card skipped");
+            return;
+        }
+        gamePlayRef.StartChooseOpponentCardDestroyEffect();
+        CardEffectTrace.Push($"destroy_opponent_card: started");
+    }
+
+    private void ExecuteShuffleHandDraw(CardEffectParser.EffectAction action, string cardId, int dynamicValue = 0)
+    {
+        if (gamePlayRef == null)
+        {
+            Debug.LogError("[CardEffectExecutor] GamePlay reference is null, shuffle_hand_draw skipped");
+            return;
+        }
+
+        int drawCount = GetIntParam(action, "param0", 4, dynamicValue);
+        gamePlayRef.StartShuffleHandDrawEffect(drawCount);
+        CardEffectTrace.Push($"shuffle_hand_draw: draw count={drawCount}");
     }
 
     private int GetIntParam(CardEffectParser.EffectAction action, string key, int defaultValue, int dynamicValue = 0)

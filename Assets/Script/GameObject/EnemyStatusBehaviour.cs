@@ -119,7 +119,7 @@ public class EnemyStatusBehaviour : MonoBehaviour, IEnemyStatus
 
         if (gamePlay == null) return;
 
-        if (gamePlay.TrySendCardGameObjectToPlayerDiscard(gameObject))
+        if (gamePlay.TrySendCardGameObjectToPlayerDiscard(gameObject) || gamePlay.TrySendCardGameObjectToAIDiscard(gameObject))
             discardQueued = true;
     }
 

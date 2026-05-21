@@ -72,6 +72,12 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
         if (!wasDroppedThisDrag)
         {
+            if (TryTriggerEventCardOnRelease(eventData))
+            {
+                wasDroppedThisDrag = false;
+                return;
+            }
+
             // 若沒有被任何 SimpleDropArea 接住，就回到原位
             transform.SetParent(startParent, false);
             rt.anchoredPosition = startAnchoredPos;
@@ -82,5 +88,73 @@ public class SimpleDraggable : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
         // 重置旗標，供下一次拖曳使用
         wasDroppedThisDrag = false;
+    }
+
+    private bool TryTriggerEventCardOnRelease(PointerEventData eventData)
+    {
+        if (eventData == null)
+            return false;
+
+        string cardId = ResolveCardId(gameObject);
+        if (string.IsNullOrWhiteSpace(cardId))
+            return false;
+
+        var cardEvent = FindObjectOfType<CardEvent>();
+        if (cardEvent == null)
+            return false;
+
+        if (!cardEvent.TryGetCardById(cardId, out var cardData) || cardData == null || !cardData.IsEvent)
+            return false;
+
+        if (!IsPointerReleasedOutsideOriginalHand(eventData))
+            return false;
+
+        var gamePlay = FindObjectOfType<GamePlay>();
+        var cardrunTime = FindObjectOfType<CardrunTime>();
+        if (cardrunTime != null)
+            cardrunTime.TriggerCardEffect(cardId, CardEffectEvent.EventType.EventUse);
+
+        if (gamePlay != null)
+        {
+            OriginalHandController?.OnCardRemoved(gameObject);
+            OriginalTurHandController?.OnCardRemoved(gameObject);
+            gamePlay.TrySendCardGameObjectToPlayerDiscard(gameObject);
+        }
+
+        Destroy(gameObject);
+        return true;
+    }
+
+    private bool IsPointerReleasedOutsideOriginalHand(PointerEventData eventData)
+    {
+        if (OriginalParent == null)
+            return true;
+
+        var parentRect = OriginalParent.GetComponent<RectTransform>();
+        if (parentRect == null)
+            return true;
+
+        Camera eventCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera ?? eventData.pressEventCamera : null;
+        return !RectTransformUtility.RectangleContainsScreenPoint(parentRect, eventData.position, eventCamera);
+    }
+
+    private string ResolveCardId(GameObject cardGO)
+    {
+        if (cardGO == null)
+            return null;
+
+        var simpleData = cardGO.GetComponent<SimpleCardData>();
+        if (simpleData != null && !string.IsNullOrWhiteSpace(simpleData.cardId))
+            return simpleData.cardId.Trim();
+
+        var cardData = cardGO.GetComponent<CardData>();
+        if (cardData != null && !string.IsNullOrWhiteSpace(cardData.id))
+            return cardData.id.Trim();
+
+        var identity = cardGO.GetComponent<CardIdentity>();
+        if (identity != null && !string.IsNullOrWhiteSpace(identity.Id))
+            return identity.Id.Trim();
+
+        return null;
     }
 }

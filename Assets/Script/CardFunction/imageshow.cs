@@ -1,6 +1,4 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,33 +14,28 @@ public class imageshow : MonoBehaviour
 
     private CardData _cardData;
     private leftRightClickCard _cardClickData;
+    private GamePlay _gamePlay;
+    private CardEvent _cardEvent;
     private string _lastAppliedPath;
     private int _lastShownAtk = int.MinValue;
     private int _lastShownDef = int.MinValue;
 
     void Start()
     {
-        if (cardinfo == null)
-        {
-            Debug.LogWarning("[imageshow] cardinfo not assigned");
-            return;
-        }
-
-        _cardData = cardinfo.GetComponent<CardData>();
-        if (_cardData == null)
-        {
-            Debug.LogWarning("[imageshow] CardData not found on cardinfo");
-            return;
-        }
-
-        _cardClickData = cardinfo.GetComponent<leftRightClickCard>();
-
+        ResolveBindings();
+        _gamePlay = FindObjectOfType<GamePlay>();
+        _cardEvent = FindObjectOfType<CardEvent>();
         TryRefresh();
     }
 
     void Update()
     {
-        if (_cardData == null) return;
+        if (_cardData == null)
+        {
+            ResolveBindings();
+            if (_cardData == null) return;
+        }
+
         int currentAtk = ResolveCurrentAtk();
         int currentDef = _cardData.Def;
         bool needsRefresh = _cardData.imagePath != _lastAppliedPath
@@ -55,6 +48,9 @@ public class imageshow : MonoBehaviour
 
     public void TryRefresh()
     {
+        if (_cardData == null)
+            ResolveBindings();
+
         if (_cardData == null) return;
 
         imagepath = _cardData.imagePath;
@@ -73,12 +69,51 @@ public class imageshow : MonoBehaviour
         _lastShownDef = def;
     }
 
+    public void BindCardInfo(GameObject sourceCard)
+    {
+        if (sourceCard != null)
+            cardinfo = sourceCard;
+
+        ResolveBindings();
+        TryRefresh();
+    }
+
+    private void ResolveBindings()
+    {
+        if (cardinfo == null)
+        {
+            _cardData = null;
+            _cardClickData = null;
+            return;
+        }
+
+        _cardData = cardinfo.GetComponent<CardData>();
+        _cardClickData = cardinfo.GetComponent<leftRightClickCard>();
+
+        if (_cardData == null)
+            Debug.LogWarning("[imageshow] CardData not found on cardinfo");
+    }
+
     private int ResolveCurrentAtk()
     {
-        if (_cardClickData != null && _cardClickData.selectedAttackDamage > 0)
-            return _cardClickData.selectedAttackDamage;
+        if (_cardData != null && !string.IsNullOrWhiteSpace(_cardData.id))
+        {
+            if (_cardEvent == null) _cardEvent = FindObjectOfType<CardEvent>();
+            if (_gamePlay == null) _gamePlay = FindObjectOfType<GamePlay>();
 
-        return _cardData != null ? _cardData.Atk : 0;
+            if (_cardEvent != null && _cardEvent.TryGetCardById(_cardData.id.Trim(), out var data) && data != null)
+            {
+                int baseAtk = Mathf.Max(0, data.Atk);
+                if (_gamePlay != null)
+                    return _gamePlay.GetPlayerAttackWithBuff(_cardData.id.Trim(), baseAtk);
+                return baseAtk;
+            }
+        }
+
+        if (_cardClickData != null && _cardClickData.selectedAttackDamage > 0)
+            return Mathf.Max(0, _cardClickData.selectedAttackDamage);
+
+        return _cardData != null ? Mathf.Max(0, _cardData.Atk) : 0;
     }
 
     private void ApplyImage(string path)
@@ -115,5 +150,4 @@ public class imageshow : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
 }

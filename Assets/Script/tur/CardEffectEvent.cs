@@ -23,7 +23,8 @@ public static class CardEffectEvent
         TurnEnd,
         Drawn,
         Discarded,
-        Act
+        Act,
+        EventUse
     }
 
     // 回調委託類型

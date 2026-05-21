@@ -38,6 +38,15 @@ public class CardData : MonoBehaviour
     public Button Act1;
     public Button Act2;
 
+    private GamePlay _gamePlay;
+    private int _lastDisplayedAtk = int.MinValue;
+    private int _lastDisplayedDef = int.MinValue;
+
+    void Awake()
+    {
+        _gamePlay = FindObjectOfType<GamePlay>();
+    }
+
 
     void Start()
     {
@@ -67,6 +76,14 @@ public class CardData : MonoBehaviour
         EnsureImageTargets();
         if (!string.IsNullOrWhiteSpace(imagePath))
             ApplyImageByPath(imagePath);
+
+        CacheDisplayedStats();
+    }
+
+    void Update()
+    {
+        if (HasDisplayedStatsChanged())
+            UpdateUITexts();
     }
 
     // 從目前設定的檔案讀取並填入欄位 + 更新 UI
@@ -230,11 +247,46 @@ public class CardData : MonoBehaviour
     // 更新 UI 文字顯示，使用目前欄位值
     public void UpdateUITexts()
     {
-       
+        int shownAtk = GetDisplayedAttack();
+        int shownDef = GetDisplayedDefense();
+
         if (nameText) nameText.text = cardName;
         if (skillsText) skillsText.text = skillText;
-        if (atkText) atkText.text = Atk.ToString();
-        if (defText) defText.text = Def.ToString();
+        if (atkText) atkText.text = shownAtk.ToString();
+        if (defText) defText.text = shownDef.ToString();
+
+        _lastDisplayedAtk = shownAtk;
+        _lastDisplayedDef = shownDef;
+    }
+
+    private int GetDisplayedAttack()
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return Mathf.Max(0, Atk);
+
+        if (_gamePlay == null)
+            _gamePlay = FindObjectOfType<GamePlay>();
+
+        if (_gamePlay == null)
+            return Mathf.Max(0, Atk);
+
+        return _gamePlay.GetPlayerAttackWithBuff(id.Trim(), Mathf.Max(0, Atk));
+    }
+
+    private int GetDisplayedDefense()
+    {
+        return Mathf.Max(0, Def);
+    }
+
+    private bool HasDisplayedStatsChanged()
+    {
+        return _lastDisplayedAtk != GetDisplayedAttack() || _lastDisplayedDef != GetDisplayedDefense();
+    }
+
+    private void CacheDisplayedStats()
+    {
+        _lastDisplayedAtk = GetDisplayedAttack();
+        _lastDisplayedDef = GetDisplayedDefense();
     }
 
     private void EnsureImageTargets()

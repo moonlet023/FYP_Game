@@ -23,7 +23,7 @@
         "en_spawn": 2,
         "Act Num": 0,
         "skill Text": "If there have more than 3 [Eif] in game, this character can earn one more green energy in start stage.",
-        "Atk": 1,
+        "Atk": 0,
         "Def": 0,
         "image": "Assets/texture/card/02.png",
         "EZcode": "elementalist, more than 3 Eif: start stage, earn:1 green energy"
@@ -37,10 +37,38 @@
         "en_spawn": 2,
         "Act Num": 1,
         "skill Text": "(discard one Green energy) choose one of your card in attack area ATK +1",
-        "Atk": 1,
+        "Atk": 0,
         "Def": 0,
         "image": "Assets/texture/card/03.png",
         "EZcode": "Act 1 -> discard:1 green energy, choose:1 card in attack area, ATK +1"
+      },
+      "04": {
+        "name": "Elf twins - ann",
+        "type": "Eif",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 3,
+        "en_spawn": 1,
+        "Act Num": 0,
+        "skill Text": "(discard one card) when this card is common summon, you can discard one card, if you do, find \"Elf twins - rin\" from your deck and summon",
+        "Atk": 3,
+        "Def": 1,
+        "image": "Assets/texture/card/04.png",
+        "EZcode": "common summon -> discard:1 card, find_and_summon:Elf twins - rin"
+      },
+      "05": {
+        "name": "Elf twins - rin",
+        "type": "Eif",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 3,
+        "en_spawn": 1,
+        "Act Num": 0,
+        "skill Text": "(discard one card) when this card is common summon, you can discard one card, if you do, find \"Elf twins - ann\" from your deck and summon",
+        "Atk": 3,
+        "Def": 1,
+        "image": "Assets/texture/card/05.png",
+        "EZcode": "common summon -> discard:1 card, find_and_summon:Elf twins - ann"
       },
       "06": {
         "name": "Queen of Elf - san",
@@ -56,6 +84,64 @@
         "Def": 3,
         "image": "Assets/texture/card/06.png",
         "EZcode": "summon -> heal:X HP, X = energy; when in attack area -> all your card in attack area ATK +X, X = number of card in attack area"
-    }
+    },
+      "07": {
+        "name": "Elf musician - sara",
+        "type": ["Elf", "Music"],
+        "is Ace": false,
+        "color": "Green",
+        "cost": 5,
+        "en_spawn": 1,
+        "Act Num": 0,
+        "skill Text": "(discard X energy) when this card is common summon, you can discard X energy, if you do, choose one of your opperent card in attack area, that card move to opperent deck bottom. in this turn this card ATK +X, X is the number of cost of opperent card you choose.",
+        "Atk": 6,
+        "Def": 4,
+        "image": "Assets/texture/card/07.png",
+        "EZcode": "common summon -> choose_opponent_bounce"
+    },
+      "08": {
+        "name": "Guard of the Elf Queen",
+        "type": "Elf",
+        "is Ace": false,
+        "color": "Green",
+        "cost": 5,
+        "en_spawn": 1,
+        "Act Num": 0,
+        "skill Text": "[Guard] When this card destoryed, destroy attack card ",
+        "Atk": 1,
+        "Def": 5,
+        "image": "Assets/texture/card/08.png",
+        "EZcode": "[Guard] destroyed -> destroy_opponent_card"
+    },
+      "15":{
+        "name": "Start Again",
+        "type": "Event",
+        "is Ace": false,
+        "is Event": true,
+        "color": "Colorless",
+        "cost": 3,
+        "en_spawn": 0,
+        "Act Num": 0,
+        "skill Text": "[Limit] Each player shuffle their hand into deck and draw 4 cards.",
+        "Atk": 0,
+        "Def": 0,
+        "image": "Assets/texture/card/15.png",
+        "EZcode": "[Limit]event_use -> shuffle_hand_draw:4"
+      },
+      "16":{
+        "name": "Set a trap",
+        "type": "Event",
+        "is Ace": false,
+        "is Event": true,
+        "color": "Colorless",
+        "cost": 5,
+        "en_spawn": 0,
+        "Act Num": 0,
+        "skill Text": "Destory one opperent card",
+        "Atk": 0,
+        "Def": 0,
+        "image": "Assets/texture/card/16.png",
+        "EZcode": "event_use -> destroy_opponent_card"
+      }
   }
 }

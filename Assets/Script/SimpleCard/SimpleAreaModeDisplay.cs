@@ -53,6 +53,15 @@ public class SimpleAreaModeDisplay : MonoBehaviour
     // 顯示預設模式（依 defaultDefense 決定），並（可選）淡入
     public void ShowDefault()
     {
+        if (iconImage == null)
+        {
+            Debug.LogWarning($"SimpleAreaModeDisplay: ShowDefault called but iconImage is null on {name}");
+            return;
+        }
+        if (defaultDefense)
+            Debug.Log($"SimpleAreaModeDisplay: ShowDefault -> defense on {name}");
+        else
+            Debug.Log($"SimpleAreaModeDisplay: ShowDefault -> attack on {name}");
         SetMode(defense: defaultDefense);
         Show();
     }
@@ -65,6 +74,7 @@ public class SimpleAreaModeDisplay : MonoBehaviour
             Debug.LogWarning($"SimpleAreaModeDisplay: iconImage is null on {name}");
             return;
         }
+        Debug.Log($"SimpleAreaModeDisplay: SetMode defense={defense} on {name}");
         iconImage.enabled = true;
         if (!defense)
         {

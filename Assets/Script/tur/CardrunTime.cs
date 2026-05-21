@@ -50,12 +50,13 @@ public class CardrunTime : MonoBehaviour
         Debug.Log("[CardrunTime] Initializing all card effects from card database...");
         global::CardEffectTrace.Push("InitializeAllCardEffects start.");
 
-        // 需要遍歷所有卡片並根據其 EZcode 註冊效果
-        // 由於 CardEvent 不提供遍歷方法，這裡需要改進
-        // 暫時使用調用特定卡片 ID 的方式
-        
-        // 測試：初始化卡片 "01" 的效果
+        // 初始化主要卡片
         InitializeCardEffect("01");
+        
+        // 初始化特殊卡片：08 (Guard), 15 (Event), 16 (Event)
+        InitializeCardEffect("08");
+        InitializeCardEffect("15");
+        InitializeCardEffect("16");
     }
 
     /// <summary>

@@ -3,11 +3,12 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
 using System.Reflection;
+using TMPro;
 
 // Remade: Left-click toggles a particle effect around the card.
 // Right-click toggles (open/close) a RawImage panel.
 // Works for UI cards (via IPointerClickHandler) and 3D cards (via OnMouseDown).
-public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
+public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerDownHandler, IDragHandler, IPointerUpHandler
 {
 	// Particle effect prefab (UI prefab with RectTransform or 3D/Particle).
 	public GameObject particleEffectPrefab;
@@ -71,6 +72,26 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	// 不再由攻擊者持有敵方參考，而是由目標卡在被點擊時提供狀態。
 	public MonoBehaviour targetStatusBehaviour; // 實作 IEnemyStatus 的腳本（僅目標卡需要）
 
+	[Header("State Swipe Toggle")]
+	public bool allowStateSwipeToggle = true;                    // 是否啟用橫向滑動切換戰鬥狀態
+	public float horizontalSwipeDistanceThreshold = 40f;        // 橫向滑動距離門檻
+	public float horizontalToVerticalSwipeRatio = 1.5f;         // 判斷是否為橫向滑動，x 偏移需大於 y 偏移倍數
+	public bool allowVisualToggleWithoutStatus = true;          // 若無 IEnemyStatus，是否仍執行視覺切換
+	public bool rotateCardOnStateToggle = true;                 // 切換時是否旋轉卡片
+	public Transform rotationTarget;                             // 旋轉目標（預設為此物件）
+	public float defenseRotationAngle = 90f;                    // 防禦狀態旋轉角度
+	public SimpleAreaModeDisplay areaModeDisplay;               // 可選：切換防禦/攻擊圖示
+
+	private Vector2 _swipeStartPosition;
+	private bool _pointerDownForSwipe;
+	private bool _swipeToggleProcessed;
+	private bool _isPotentialLeftClick;
+	private Transform _rotationTarget;
+	private Quaternion _initialLocalRotation;
+	private bool _hasSwappedBattleStateThisTurn = false;
+	private bool _isDefenseVisual = false;
+	private EnemyStatusBehaviour _resolvedEnemyStatusBehaviour;
+
 	[Header("Card Data (Optional)")]
 	public bool autoPullAttackFromCardData = true; // 進入攻擊模式時自動讀取卡片 atk
 	public bool preferCardDatabaseById = true;      // 優先以卡片 id 向 CardEvent 查詢真實資料
@@ -99,6 +120,13 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		EnsureEventSystem();
 		// Auto-resolve target status so敵方卡可被選為目標
 		ResolveTargetStatusBehaviour();
+		// Auto-find the local SimpleAreaModeDisplay if not manually assigned
+		ResolveAreaModeDisplay();
+		// initialize visual state tracker
+		_isDefenseVisual = areaModeDisplay != null ? areaModeDisplay.defaultDefense : false;
+
+		_rotationTarget = rotationTarget != null ? rotationTarget : transform;
+		_initialLocalRotation = _rotationTarget.localRotation;
 
 		// Reminder for 3D objects: OnMouseDown requires a Collider
 		if (GetComponent<Collider>() == null && GetComponent<Collider2D>() == null)
@@ -114,16 +142,43 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		{
 			SetAttackModeFeedback(false);
 		}
-	}
-
-	void OnDisable()
-	{
-		SetAttackModeFeedback(false);
+		SubscribeToTargetStateChanges();
 	}
 
 	void Update()
 	{
 		UpdateAttackModeFeedback();
+		RefreshRightClickPanelRealtimeIfOpen();
+		CheckPendingMouseSwipe();
+	}
+
+	private void CheckPendingMouseSwipe()
+	{
+		if (!_pointerDownForSwipe || _swipeToggleProcessed)
+		{
+			return;
+		}
+
+		if (!Input.GetMouseButton(0))
+		{
+			return;
+		}
+
+		if (TryProcessStateSwipe(Input.mousePosition))
+		{
+			_pointerDownForSwipe = false;
+			_isPotentialLeftClick = false;
+		}
+	}
+
+	private void RefreshRightClickPanelRealtimeIfOpen()
+	{
+		if (rightClickPanel == null || !rightClickPanel.gameObject.activeInHierarchy)
+			return;
+
+		ResolveSelectedAttackDamageFromCardData();
+		string cardId = ResolveThisCardId();
+		ForceRefreshRightClickPanelStats(cardId, rebindPanelData: false);
 	}
 
 	// 3D click support
@@ -132,31 +187,10 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseDown on {name}");
 		if (Input.GetMouseButtonDown(0))
 		{
-			if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseDown Left (awaitingTarget={AttackTargetingManager.Instance.IsAwaitingTarget}, hasTargetStatus={targetStatusBehaviour != null}, selectedDamage={selectedAttackDamage})");
-			// 若目前在等待目標、且本卡具備可攻擊目標的狀態，則直接套用攻擊到此目標
-			if (AttackTargetingManager.Instance.IsAwaitingTarget)
-			{
-				if (targetStatusBehaviour != null)
-				{
-					AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
-				}
-				else
-				{
-					if (debugLogs) Debug.LogWarning("leftRightClickCard: this card is not a valid target (no IEnemyStatus)");
-					return; // 在等待目標時，避免重啟攻擊
-				}
-			}
-			else
-			{
-				ToggleParticle();
-				EnterAttackMode();
-				ResolveSelectedAttackDamageFromCardData();
-				// 交由目標管理器等待下一次點擊作為目標（允許0攻擊）
-				if (attackableOnLeftClick)
-				{
-					AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
-				}
-			}
+			_isPotentialLeftClick = true;
+			_pointerDownForSwipe = allowStateSwipeToggle && !AttackTargetingManager.Instance.IsAwaitingTarget && !_isAttackMode;
+			_swipeStartPosition = Input.mousePosition;
+			_swipeToggleProcessed = false;
 		}
 		else if (Input.GetMouseButtonDown(1))
 		{
@@ -165,41 +199,288 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 		}
 	}
 
-	// UI click support
-	public void OnPointerClick(PointerEventData eventData)
+	void OnMouseDrag()
 	{
-		if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerClick {eventData.button} on {name}");
-		if (eventData.button == PointerEventData.InputButton.Left)
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseDrag on {name} position={Input.mousePosition} start={_swipeStartPosition}");
+		if (!_pointerDownForSwipe || _swipeToggleProcessed)
 		{
-			// UI 路徑同樣支援目標選取
-			if (AttackTargetingManager.Instance.IsAwaitingTarget)
+			return;
+		}
+
+		if (TryProcessStateSwipe(Input.mousePosition))
+		{
+			_pointerDownForSwipe = false;
+			_isPotentialLeftClick = false;
+		}
+	}
+
+	void OnMouseUp()
+	{
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnMouseUp on {name} swipeProcessed={_swipeToggleProcessed} pointerDown={_pointerDownForSwipe}");
+		if (_pointerDownForSwipe && !_swipeToggleProcessed)
+		{
+			_pointerDownForSwipe = false;
+			Handle3DLeftClick();
+		}
+		else if (_isPotentialLeftClick && !_swipeToggleProcessed)
+		{
+			Handle3DLeftClick();
+		}
+
+		_isPotentialLeftClick = false;
+	}
+
+	private void Handle3DLeftClick()
+	{
+		if (debugLogs) Debug.Log($"leftRightClickCard: Handle3DLeftClick on {name}");
+		if (AttackTargetingManager.Instance.IsAwaitingTarget)
+		{
+			if (targetStatusBehaviour != null)
 			{
-				if (targetStatusBehaviour != null)
-				{
-					AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
-				}
-				else
-				{
-					if (debugLogs) Debug.LogWarning("leftRightClickCard: UI click on non-target card (no IEnemyStatus)");
-					return;
-				}
+				AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
 			}
 			else
 			{
-				ToggleParticle();
-				EnterAttackMode();
-				ResolveSelectedAttackDamageFromCardData();
-				if (attackableOnLeftClick)
-				{
-					AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
-				}
+				if (debugLogs) Debug.LogWarning("leftRightClickCard: this card is not a valid target (no IEnemyStatus)");
+				return;
 			}
+		}
+		else
+		{
+			ToggleParticle();
+			EnterAttackMode();
+			ResolveSelectedAttackDamageFromCardData();
+			if (attackableOnLeftClick)
+			{
+				AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
+			}
+		}
+	}
+
+	// UI click support
+	public void OnPointerClick(PointerEventData eventData)
+	{
+		if (_swipeToggleProcessed)
+		{
+			_swipeToggleProcessed = false;
+			if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerClick ignored because swipe toggle was processed on {name}");
+			return;
+		}
+
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerClick {eventData.button} on {name}");
+		if (eventData.button == PointerEventData.InputButton.Left)
+		{
+			HandleUIPointerLeftClick(eventData);
 		}
 		else if (eventData.button == PointerEventData.InputButton.Right)
 		{
 			ToggleRightPanel();
 		}
 	}
+
+	public void OnPointerDown(PointerEventData eventData)
+	{
+		if (eventData.button != PointerEventData.InputButton.Left)
+		{
+			return;
+		}
+
+		if (!allowStateSwipeToggle || AttackTargetingManager.Instance.IsAwaitingTarget || _isAttackMode)
+		{
+			return;
+		}
+
+		_pointerDownForSwipe = true;
+		_swipeStartPosition = eventData.position;
+		_swipeToggleProcessed = false;
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerDown pos={eventData.position} pointerDownForSwipe={_pointerDownForSwipe} on {name}");
+	}
+
+	public void OnDrag(PointerEventData eventData)
+	{
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnDrag pos={eventData.position} pointerDown={_pointerDownForSwipe} processed={_swipeToggleProcessed} on {name}");
+		if (!_pointerDownForSwipe || _swipeToggleProcessed)
+		{
+			return;
+		}
+
+		if (TryProcessStateSwipe(eventData.position))
+		{
+			_pointerDownForSwipe = false;
+		}
+	}
+
+	public void OnPointerUp(PointerEventData eventData)
+	{
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnPointerUp pos={eventData.position} pointerDown={_pointerDownForSwipe} processed={_swipeToggleProcessed} on {name}");
+		if (_pointerDownForSwipe && !_swipeToggleProcessed)
+		{
+			if (!TryProcessStateSwipe(eventData.position))
+			{
+				HandleUIPointerLeftClick(eventData);
+				_swipeToggleProcessed = true;
+			}
+		}
+
+		_pointerDownForSwipe = false;
+	}
+
+	private void HandleUIPointerLeftClick(PointerEventData eventData)
+	{
+		if (AttackTargetingManager.Instance.IsAwaitingTarget)
+		{
+			if (targetStatusBehaviour != null)
+			{
+				AttackTargetingManager.Instance.TryApplyAttackToTarget(targetStatusBehaviour, debugLogs);
+			}
+			else
+			{
+				if (debugLogs) Debug.LogWarning("leftRightClickCard: UI click on non-target card (no IEnemyStatus)");
+			}
+		}
+		else
+		{
+			ToggleParticle();
+			EnterAttackMode();
+			ResolveSelectedAttackDamageFromCardData();
+			if (attackableOnLeftClick)
+			{
+				AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
+			}
+		}
+	}
+
+	private bool TryProcessStateSwipe(Vector2 currentPosition)
+	{
+		if (!allowStateSwipeToggle || _swipeToggleProcessed || _hasSwappedBattleStateThisTurn)
+		{
+			return false;
+		}
+
+		Vector2 delta = currentPosition - _swipeStartPosition;
+		if (debugLogs) Debug.Log($"leftRightClickCard: swipe delta={delta} on {name}");
+		// require minimum horizontal movement
+		if (Mathf.Abs(delta.x) < horizontalSwipeDistanceThreshold)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: swipe too short ({Mathf.Abs(delta.x)} < {horizontalSwipeDistanceThreshold}) on {name}");
+			return false;
+		}
+
+		// ensure it's predominantly horizontal
+		if (Mathf.Abs(delta.x) < Mathf.Abs(delta.y) * horizontalToVerticalSwipeRatio)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: swipe rejected as vertical on {name} delta={delta}");
+			return false;
+		}
+
+		var status = GetEnemyStatusOrNull();
+		if (status == null)
+		{
+			if (!allowVisualToggleWithoutStatus)
+			{
+				if (debugLogs) Debug.Log($"leftRightClickCard: swipe ignored because no IEnemyStatus on {name}");
+				return false;
+			}
+			// fallback: perform visual-only toggle (no game-status change)
+			if (debugLogs) Debug.Log($"leftRightClickCard: performing visual-only state toggle on {name} (no IEnemyStatus)");
+			// flip visual state
+			bool shouldEnterDefense = !_isDefenseVisual;
+			RefreshAreaModeDisplay(shouldEnterDefense);
+			RefreshRotation(shouldEnterDefense);
+			_swipeToggleProcessed = true;
+			_hasSwappedBattleStateThisTurn = true;
+			return true;
+		}
+
+		if (debugLogs) Debug.Log($"leftRightClickCard: detected state swipe on {name} delta={delta}");
+		ToggleBattleState(status);
+		_hasSwappedBattleStateThisTurn = true;
+		_swipeToggleProcessed = true;
+		return true;
+	}
+
+	private void ToggleBattleState(IEnemyStatus status)
+	{
+		var statusBehaviour = targetStatusBehaviour as EnemyStatusBehaviour ?? status as EnemyStatusBehaviour;
+		if (statusBehaviour == null)
+		{
+			if (debugLogs) Debug.LogWarning($"leftRightClickCard: cannot toggle state because status behaviour is not EnemyStatusBehaviour on {name}");
+			return;
+		}
+
+		bool shouldEnterDefense = statusBehaviour.State != EnemyBattleState.Defense;
+		string modeName = shouldEnterDefense ? "Defense" : "Attack";
+		if (debugLogs) Debug.Log($"leftRightClickCard: ToggleBattleState on {name} -> {modeName}");
+		statusBehaviour.SetState(shouldEnterDefense ? EnemyBattleState.Defense : EnemyBattleState.Attack);
+		RefreshAreaModeDisplay(shouldEnterDefense);
+		RefreshRotation(shouldEnterDefense);
+	}
+
+	private void OnTargetEnemyStateChanged(EnemyBattleState newState)
+	{
+		if (debugLogs) Debug.Log($"leftRightClickCard: OnTargetEnemyStateChanged on {name} -> {newState}");
+		bool defense = newState == EnemyBattleState.Defense;
+		RefreshAreaModeDisplay(defense);
+		RefreshRotation(defense);
+	}
+
+	private void RefreshAreaModeDisplay(bool defense)
+	{
+		if (areaModeDisplay != null)
+		{
+			areaModeDisplay.SetMode(defense);
+			// Ensure icon is visible (handles startHidden/opacity control)
+			areaModeDisplay.Show();
+		}
+		_isDefenseVisual = defense;
+	}
+
+	private void ResolveAreaModeDisplay()
+	{
+		if (areaModeDisplay != null)
+		{
+			return;
+		}
+
+		areaModeDisplay = GetComponent<SimpleAreaModeDisplay>();
+		if (areaModeDisplay != null)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: resolved areaModeDisplay from self on {name}");
+			return;
+		}
+
+		areaModeDisplay = GetComponentInChildren<SimpleAreaModeDisplay>(true);
+		if (areaModeDisplay != null)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: resolved areaModeDisplay from children on {name}");
+			return;
+		}
+
+		areaModeDisplay = GetComponentInParent<SimpleAreaModeDisplay>();
+		if (areaModeDisplay != null)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: resolved areaModeDisplay from parent on {name}");
+			return;
+		}
+	}
+
+	private void RefreshRotation(bool defense)
+	{
+		if (!rotateCardOnStateToggle || _rotationTarget == null)
+		{
+			return;
+		}
+
+		_rotationTarget.localRotation = defense
+			? _initialLocalRotation * Quaternion.Euler(0f, 0f, defenseRotationAngle)
+			: _initialLocalRotation;
+	}
+
+	public void ResetBattleStateToggleThisTurn()
+	{
+		_hasSwappedBattleStateThisTurn = false;
+	}
+
 	private void EnsureEventSystem()
 	{
 		var es = FindObjectOfType<UnityEngine.EventSystems.EventSystem>();
@@ -214,16 +495,37 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 
 	private void ResolveTargetStatusBehaviour()
 	{
-		if (targetStatusBehaviour != null) return;
-
-		targetStatusBehaviour = EnemyStatusLocator.FindStatusBehaviourFrom(gameObject);
-		if (targetStatusBehaviour != null)
+		if (targetStatusBehaviour == null)
 		{
-			if (debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour -> {targetStatusBehaviour.GetType().Name}");
-			return;
+			targetStatusBehaviour = EnemyStatusLocator.FindStatusBehaviourFrom(gameObject);
+			if (targetStatusBehaviour != null && debugLogs) Debug.Log($"leftRightClickCard: resolved targetStatusBehaviour -> {targetStatusBehaviour.GetType().Name}");
 		}
 
-		if (debugLogs) Debug.Log("leftRightClickCard: no IEnemyStatus found on self/children/parents; this card won't act as a target");
+		_resolvedEnemyStatusBehaviour = targetStatusBehaviour as EnemyStatusBehaviour;
+		SubscribeToTargetStateChanges();
+
+		if (targetStatusBehaviour == null && debugLogs)
+		{
+			Debug.Log("leftRightClickCard: no IEnemyStatus found on self/children/parents; this card won't act as a target");
+		}
+	}
+
+	private void SubscribeToTargetStateChanges()
+	{
+		if (_resolvedEnemyStatusBehaviour == null)
+		{
+			if (debugLogs) Debug.Log($"leftRightClickCard: no EnemyStatusBehaviour to subscribe on {name}");
+			return;
+		}
+		_resolvedEnemyStatusBehaviour.OnStateChanged -= OnTargetEnemyStateChanged;
+		_resolvedEnemyStatusBehaviour.OnStateChanged += OnTargetEnemyStateChanged;
+		if (debugLogs) Debug.Log($"leftRightClickCard: subscribed to EnemyStatusBehaviour.OnStateChanged on {name}");
+	}
+
+	private void UnsubscribeFromTargetStateChanges()
+	{
+		if (_resolvedEnemyStatusBehaviour == null) return;
+		_resolvedEnemyStatusBehaviour.OnStateChanged -= OnTargetEnemyStateChanged;
 	}
 
 	private void ResolveSelectedAttackDamageFromCardData()
@@ -435,6 +737,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 	{
 		if (rightClickPanel == null) return;
 
+		ResolveSelectedAttackDamageFromCardData();
+
 		string cardId = ResolveThisCardId();
 		bool updated = false;
 
@@ -448,8 +752,99 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler
 			updated = TryCopyCurrentCardVisualToInfoPanel();
 		}
 
+		ForceRefreshRightClickPanelStats(cardId, rebindPanelData: true);
+
 		if (debugLogs)
 			Debug.Log($"leftRightClickCard: SyncRightClickPanelContent updated={updated}, cardId={cardId}");
+	}
+
+	private void ForceRefreshRightClickPanelStats(string cardId, bool rebindPanelData)
+	{
+		if (rightClickPanel == null) return;
+
+		if (rebindPanelData)
+		{
+			var panelCards = rightClickPanel.GetComponentsInChildren<global::CardData>(true);
+			for (int i = 0; i < panelCards.Length; i++)
+			{
+				var panelCard = panelCards[i];
+				if (panelCard == null) continue;
+				if (!string.IsNullOrWhiteSpace(cardId))
+					panelCard.SetCardId(cardId);
+				panelCard.UpdateUITexts();
+			}
+		}
+
+		var imageShows = rightClickPanel.GetComponentsInChildren<imageshow>(true);
+		for (int i = 0; i < imageShows.Length; i++)
+		{
+			if (imageShows[i] == null) continue;
+			if (rebindPanelData)
+				imageShows[i].BindCardInfo(gameObject);
+			else
+				imageShows[i].TryRefresh();
+		}
+
+		if (!TryResolvePanelStats(cardId, out int atk, out int def))
+			return;
+
+		var texts = rightClickPanel.GetComponentsInChildren<TextMeshProUGUI>(true);
+		for (int i = 0; i < texts.Length; i++)
+		{
+			var t = texts[i];
+			if (t == null) continue;
+
+			string n = t.name != null ? t.name.ToLowerInvariant() : string.Empty;
+			if (n.Contains("atk") || n.Contains("attack"))
+			{
+				t.text = atk.ToString();
+			}
+			else if (n.Contains("def") || n.Contains("defense"))
+			{
+				t.text = def.ToString();
+			}
+		}
+	}
+
+	private bool TryResolvePanelStats(string cardId, out int attack, out int defense)
+	{
+		attack = 0;
+		defense = 0;
+
+		if (string.IsNullOrWhiteSpace(cardId))
+		{
+			var localCard = GetComponent<global::CardData>();
+			if (localCard == null) return false;
+			attack = Mathf.Max(0, localCard.Atk);
+			defense = Mathf.Max(0, localCard.Def);
+			return true;
+		}
+
+		string normalizedId = cardId.Trim();
+		var cardEvent = FindObjectOfType<CardEvent>();
+		if (cardEvent != null && cardEvent.TryGetCardById(normalizedId, out var data) && data != null)
+		{
+			int baseAtk = Mathf.Max(0, data.Atk);
+			defense = Mathf.Max(0, data.Def);
+
+			var gamePlay = FindObjectOfType<GamePlay>();
+			attack = gamePlay != null
+				? gamePlay.GetPlayerAttackWithBuff(normalizedId, baseAtk)
+				: baseAtk;
+
+			if (selectedAttackDamage > 0)
+				attack = Mathf.Max(attack, selectedAttackDamage);
+
+			return true;
+		}
+
+		var fallbackCard = GetComponent<global::CardData>();
+		if (fallbackCard == null) return false;
+		attack = Mathf.Max(0, fallbackCard.Atk);
+		defense = Mathf.Max(0, fallbackCard.Def);
+		if (selectedAttackDamage > 0)
+			attack = Mathf.Max(attack, selectedAttackDamage);
+		return true;
 	}
 
 	private bool TryApplyCardIdToInfoPanel(string cardId)
