@@ -112,11 +112,12 @@ MonoBehaviour:
   rightClickPanel: {fileID: 0}
   rightClickPanelName: CardZoom
   rightClickPanelTag: Zoom
-  rightClickPanelPrefab: {fileID: 337241894184480945, guid: d1c7ce83ef6a4404ca03b5945bedadb9, type: 3}
+  rightClickPanelParent: {fileID: 0}
+  rightClickPanelPrefab: {fileID: 2921289708765457645, guid: 1de76d3d2123cf346bfa1f5704893e4b, type: 3}
   generatePanelIfMissing: 1
-  generatedPanelSize: {x: 512, y: 512}
+  generatedPanelSize: {x: 1920, y: 1080}
   centerPanelOnOpen: 1
-  ensurePanelCanvasSorting: 1
+  ensurePanelCanvasSorting: 0
   panelSortingOrder: 2000
   bringPanelToFront: 1
   debugLogs: 0

@@ -44,6 +44,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	public RawImage rightClickPanel;
 	public string rightClickPanelName; // Runtime find by name
 	public string rightClickPanelTag;  // Runtime find by tag
+	[Header("Right Click Panel Parent")]
+	public RectTransform rightClickPanelParent; // Optional explicit parent for generated zoom panel
 	// Prefab-based generation if panel is missing
 	public GameObject rightClickPanelPrefab; // Prefab to instantiate as zoom panel (should include RawImage)
 	public bool generatePanelIfMissing = true; // Auto-create panel if not found
@@ -115,6 +117,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		EnsureClickableGraphicIfUI();
 		ResolveRightClickPanelHints();
 		EnsurePanelIsSceneInstance();
+		// CRITICAL: if panel is inside placecard, move it out immediately
+		ForceRemovePanelFromPlacecard();
 
 		// Ensure EventSystem exists for UI pointer events
 		EnsureEventSystem();
@@ -250,7 +254,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 			ToggleParticle();
 			EnterAttackMode();
 			ResolveSelectedAttackDamageFromCardData();
-			if (attackableOnLeftClick)
+			// Only begin attack targeting if attack mode was successfully entered
+			if (_isAttackMode && attackableOnLeftClick)
 			{
 				AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
 			}
@@ -343,7 +348,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 			ToggleParticle();
 			EnterAttackMode();
 			ResolveSelectedAttackDamageFromCardData();
-			if (attackableOnLeftClick)
+			// Only begin attack targeting if attack mode was successfully entered
+			if (_isAttackMode && attackableOnLeftClick)
 			{
 				AttackTargetingManager.Instance.BeginAttack(this, selectedAttackDamage, debugLogs);
 			}
@@ -697,8 +703,17 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	{
 		if (rightClickPanel == null)
 		{
-			if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanel (RawImage) not assigned");
-			return;
+			// Try to generate a panel if configured to do so
+			if (generatePanelIfMissing)
+			{
+				GenerateRightClickPanelIfNeeded();
+			}
+
+			if (rightClickPanel == null)
+			{
+				if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanel (RawImage) not assigned");
+				return;
+			}
 		}
 
 		if (debugLogs) Debug.Log($"leftRightClickCard: ToggleRightPanel invoked; current active={rightClickPanel.gameObject.activeSelf}");
@@ -1217,15 +1232,16 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		if (debugLogs) Debug.Log("leftRightClickCard: created AutoCanvas (ScreenSpaceOverlay)");
 	}
 
-	// Ensure rightClickPanel references a scene instance; if a prefab asset was assigned, instantiate under uiRoot
+	// Ensure rightClickPanel references a scene instance; if a prefab asset was assigned, instantiate under correct parent
 	private void EnsurePanelIsSceneInstance()
 	{
 		if (rightClickPanel == null) return;
 		if (rightClickPanel.gameObject.scene.IsValid()) return;
 
 		if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanel points to a prefab asset; instantiating a scene instance");
-		EnsureUIRootAndCanvas();
-		var parentRT = uiRoot;
+		
+		// Get the correct parent (not placecard)
+		var parentRT = PickRightClickPanelParent();
 		if (parentRT == null)
 		{
 			var c = CreateAutoCanvas();
@@ -1241,6 +1257,82 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		}
 		panelGO.SetActive(false);
 		if (debugLogs) Debug.Log("leftRightClickCard: instantiated scene instance of rightClickPanel from prefab asset");
+	}
+
+	// CRITICAL: force panel out of placecard if it's accidentally placed there
+	private void ForceRemovePanelFromPlacecard()
+	{
+		if (rightClickPanel == null) return;
+		var panelGO = rightClickPanel.gameObject;
+		if (!panelGO.scene.IsValid()) return;
+
+		// Check if panel is under placecard
+		var parentCard = panelGO.GetComponentInParent<placecard>();
+		if (parentCard == null) return; // panel is not under placecard, all good
+
+		if (debugLogs) Debug.LogWarning($"leftRightClickCard: panel '{panelGO.name}' is inside placecard! Removing it now.");
+		
+		// Get correct parent
+		var correctParent = PickRightClickPanelParent();
+		if (correctParent == null)
+		{
+			var c = CreateAutoCanvas();
+			correctParent = c.GetComponent<RectTransform>();
+		}
+
+		// Move panel to correct parent
+		panelGO.transform.SetParent(correctParent, false);
+		panelGO.transform.SetAsLastSibling();
+		if (debugLogs) Debug.Log($"leftRightClickCard: moved panel out of placecard to '{correctParent.name}'");
+	}
+
+	// Find a suitable parent RectTransform for the right-click zoom panel.
+	// If rightClickPanelParent is assigned in Inspector, use it directly.
+	private RectTransform PickRightClickPanelParent()
+	{
+		if (rightClickPanelParent != null)
+		{
+			if (rightClickPanelParent.gameObject.scene.IsValid())
+			{
+				return rightClickPanelParent;
+			}
+			if (debugLogs) Debug.LogWarning($"leftRightClickCard: assigned rightClickPanelParent '{rightClickPanelParent.name}' is not a valid scene object.");
+		}
+
+		// Prefer uiRoot if it's valid and not inside placecard
+		if (uiRoot != null && uiRoot.gameObject.scene.IsValid())
+		{
+			if (uiRoot.GetComponentInParent<placecard>() == null)
+				return uiRoot;
+		}
+
+		var canvases = Resources.FindObjectsOfTypeAll<Canvas>();
+		for (int i = 0; i < canvases.Length; i++)
+		{
+			var c = canvases[i];
+			if (c == null || !c.gameObject.scene.IsValid()) continue;
+			var canvasRT = c.GetComponent<RectTransform>();
+			if (canvasRT == null) continue;
+			if (canvasRT.GetComponentInParent<placecard>() != null) continue;
+			// prefer root canvases (no parent) first
+			if (c.transform.parent == null) return canvasRT;
+		}
+
+		// fallback to any non-placecard canvas
+		for (int i = 0; i < canvases.Length; i++)
+		{
+			var c = canvases[i];
+			if (c == null || !c.gameObject.scene.IsValid()) continue;
+			var canvasRT = c.GetComponent<RectTransform>();
+			if (canvasRT == null) continue;
+			if (canvasRT.GetComponentInParent<placecard>() != null) continue;
+			return canvasRT;
+		}
+
+		// last resort: directly create a brand new standalone canvas
+		var standaloneCanvas = CreateAutoCanvas();
+		if (debugLogs) Debug.Log($"leftRightClickCard: created new standalone AutoCanvas for panel");
+		return standaloneCanvas.GetComponent<RectTransform>();
 	}
 
 	private void EnsureClickableGraphicIfUI()
@@ -1483,41 +1575,40 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	}
 
 	private void GenerateRightClickPanelIfNeeded()
-    {
-	if (rightClickPanel != null || !generatePanelIfMissing) return;
+	{
+		if (rightClickPanel != null || !generatePanelIfMissing) return;
 
-	// Determine parent for generated panel
-	EnsureUIRootAndCanvas();
-	var parentRT = uiRoot;
-	if (parentRT == null)
-	{
-		// As a last resort, create an overlay canvas and use it
-		var c = CreateAutoCanvas();
-		parentRT = c.GetComponent<RectTransform>();
-	}
+		var parentRT = PickRightClickPanelParent();
+		if (parentRT == null)
+		{
+			EnsureUIRootAndCanvas();
+			parentRT = uiRoot != null ? uiRoot : CreateAutoCanvas().GetComponent<RectTransform>();
+		}
 
-	GameObject panelGO = null;
-	if (rightClickPanelPrefab != null)
-	{
-		panelGO = Instantiate(rightClickPanelPrefab, parentRT);
-		if (debugLogs) Debug.Log("leftRightClickCard: instantiated rightClickPanel from prefab");
-	}
-	else
-	{
-		panelGO = new GameObject("CardZoomPanel", typeof(RectTransform));
+		GameObject panelGO = null;
+		if (rightClickPanelPrefab != null)
+		{
+			panelGO = Instantiate(rightClickPanelPrefab, parentRT);
+			if (debugLogs) Debug.Log("leftRightClickCard: instantiated rightClickPanel from prefab");
+		}
+		else
+		{
+			panelGO = new GameObject("CardZoomPanel", typeof(RectTransform));
+			panelGO.transform.SetParent(parentRT, false);
+			var ri = panelGO.AddComponent<RawImage>();
+			ri.color = Color.white;
+		}
+
 		panelGO.transform.SetParent(parentRT, false);
-		var ri = panelGO.AddComponent<RawImage>();
-		ri.color = Color.white;
-	}
+		panelGO.transform.SetAsLastSibling();
+		var rt = panelGO.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0.5f, 0.5f);
+		rt.anchorMax = new Vector2(0.5f, 0.5f);
+		rt.pivot = new Vector2(0.5f, 0.5f);
+		rt.sizeDelta = generatedPanelSize;
+		rt.anchoredPosition = Vector2.zero;
 
-	var rt = panelGO.GetComponent<RectTransform>();
-	rt.anchorMin = new Vector2(0.5f, 0.5f);
-	rt.anchorMax = new Vector2(0.5f, 0.5f);
-	rt.pivot = new Vector2(0.5f, 0.5f);
-	rt.sizeDelta = generatedPanelSize;
-	rt.anchoredPosition = Vector2.zero;
-
-	var riPanel = panelGO.GetComponent<RawImage>();
+		var riPanel = panelGO.GetComponent<RawImage>();
 	if (riPanel == null)
 	{
 		riPanel = panelGO.AddComponent<RawImage>();
@@ -1580,6 +1671,14 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 
 	public void EnterAttackMode()
 	{
+		// Prevent entering attack mode if card is currently in Defense state
+		var status = GetEnemyStatusOrNull();
+		if (status != null && status.State == EnemyBattleState.Defense)
+		{
+			if (debugLogs) Debug.Log("leftRightClickCard: cannot enter attack mode while in Defense");
+			return;
+		}
+
 		if (!attackableOnLeftClick) return;
 		_isAttackMode = true;
 		SetAttackModeFeedback(true);
