@@ -133,6 +133,11 @@ public class AttackTargetingManager : MonoBehaviour
         int attackValue = Mathf.Max(_pendingDamage, _currentAttacker != null ? _currentAttacker.selectedAttackDamage : 0);
         var res = AttackLogic.PerformAttack(status, attackValue, debugLogs || verbose);
 
+        if (_currentAttacker != null)
+        {
+            _currentAttacker.MarkAttackUsedThisTurn();
+        }
+
         if (res.attackerDestroyed)
         {
             DestroyAttackerCard(_currentAttacker);
@@ -242,7 +247,11 @@ public class AttackTargetingManager : MonoBehaviour
         }
 
         if (_currentAttacker != null)
+        {
+            _currentAttacker.MarkAttackUsedThisTurn();
             _currentAttacker.ExitAttackMode();
+        }
+
         _currentAttacker = null;
         _pendingDamage = 0;
     }

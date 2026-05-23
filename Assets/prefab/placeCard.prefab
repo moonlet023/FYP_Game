@@ -117,6 +117,7 @@ MonoBehaviour:
   generatePanelIfMissing: 1
   generatedPanelSize: {x: 1920, y: 1080}
   centerPanelOnOpen: 1
+  fullScreenRightClickPanel: 1
   ensurePanelCanvasSorting: 0
   panelSortingOrder: 2000
   bringPanelToFront: 1

@@ -51,6 +51,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	public bool generatePanelIfMissing = true; // Auto-create panel if not found
 	public Vector2 generatedPanelSize = new Vector2(512, 512); // Default size for generated panel
 	public bool centerPanelOnOpen = true; // Center panel when enabled
+	public bool fullScreenRightClickPanel = true; // Stretch panel to full screen when opened
 
 	// Panel visibility options
 	public bool ensurePanelCanvasSorting = true; // add a local Canvas to panel and set high sorting
@@ -63,6 +64,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	[Header("Combat")]
 	public bool attackableOnLeftClick = true; // 左鍵選擇後可進入攻擊模式
 	private bool _isAttackMode = false;       // 當前是否在攻擊模式
+	private bool _hasAttackedThisTurn = false;
 	public int selectedAttackDamage = 0;      // 外部設定的本次攻擊傷害
 	[Header("Attack Mode Feedback")]
 	public GameObject attackModeIndicatorObject; // 進入攻擊模式時顯示（例如外框/箭頭/光暈）
@@ -104,6 +106,9 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	private GameObject _particleInstance; // for single-spawn mode
 	private List<GameObject> _particleInstances; // for multi-spawn mode
 	private Canvas _canvas; // For coordinate conversion and raycast setup
+	private static Canvas _globalCardZoomCanvas;
+	private static RectTransform _globalCardZoomCanvasRT;
+	private const string GlobalCardZoomCanvasName = "GlobalCardZoomCanvas";
 	private Vector3 _baseLocalScale;
 
 	void Awake()
@@ -116,9 +121,6 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		EnsureUIRootAndCanvas();
 		EnsureClickableGraphicIfUI();
 		ResolveRightClickPanelHints();
-		EnsurePanelIsSceneInstance();
-		// CRITICAL: if panel is inside placecard, move it out immediately
-		ForceRemovePanelFromPlacecard();
 
 		// Ensure EventSystem exists for UI pointer events
 		EnsureEventSystem();
@@ -703,11 +705,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	{
 		if (rightClickPanel == null)
 		{
-			// Try to generate a panel if configured to do so
-			if (generatePanelIfMissing)
-			{
-				GenerateRightClickPanelIfNeeded();
-			}
+			EnsureRightClickPanel();
 
 			if (rightClickPanel == null)
 			{
@@ -1233,106 +1231,159 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 	}
 
 	// Ensure rightClickPanel references a scene instance; if a prefab asset was assigned, instantiate under correct parent
-	private void EnsurePanelIsSceneInstance()
+	private void EnsureRightClickPanel()
 	{
-		if (rightClickPanel == null) return;
-		if (rightClickPanel.gameObject.scene.IsValid()) return;
-
-		if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanel points to a prefab asset; instantiating a scene instance");
-		
-		// Get the correct parent (not placecard)
-		var parentRT = PickRightClickPanelParent();
-		if (parentRT == null)
+		if (rightClickPanel != null)
 		{
-			var c = CreateAutoCanvas();
-			parentRT = c.GetComponent<RectTransform>();
+			var existingPanelGO = rightClickPanel.gameObject;
+			if (existingPanelGO.scene.IsValid())
+			{
+				var correctParent = GetCardInfoPanelParent();
+				if (correctParent != null && !existingPanelGO.transform.IsChildOf(correctParent))
+				{
+					if (debugLogs) Debug.LogWarning($"leftRightClickCard: rightClickPanel was under wrong parent, moving to '{correctParent.name}'");
+					existingPanelGO.transform.SetParent(correctParent, false);
+					existingPanelGO.transform.SetAsLastSibling();
+				}
+				return;
+			}
 		}
 
-		var prefabGO = rightClickPanel.gameObject;
-		var panelGO = Instantiate(prefabGO, parentRT);
-		rightClickPanel = panelGO.GetComponent<RawImage>();
-		if (rightClickPanel == null)
+		ResolveRightClickPanelHints();
+		if (rightClickPanel != null && rightClickPanel.gameObject.scene.IsValid())
 		{
-			rightClickPanel = panelGO.AddComponent<RawImage>();
+			EnsurePanelOnCorrectParent();
+			return;
 		}
-		panelGO.SetActive(false);
-		if (debugLogs) Debug.Log("leftRightClickCard: instantiated scene instance of rightClickPanel from prefab asset");
+
+		if (!generatePanelIfMissing)
+		{
+			if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanel not assigned and generation disabled");
+			return;
+		}
+
+		var parentRT = GetCardInfoPanelParent();
+		var panelGO = CreateRightClickPanel(parentRT);
+		PrepareRightClickPanel(panelGO);
 	}
 
-	// CRITICAL: force panel out of placecard if it's accidentally placed there
-	private void ForceRemovePanelFromPlacecard()
+	private void EnsurePanelOnCorrectParent()
 	{
 		if (rightClickPanel == null) return;
 		var panelGO = rightClickPanel.gameObject;
-		if (!panelGO.scene.IsValid()) return;
-
-		// Check if panel is under placecard
-		var parentCard = panelGO.GetComponentInParent<placecard>();
-		if (parentCard == null) return; // panel is not under placecard, all good
-
-		if (debugLogs) Debug.LogWarning($"leftRightClickCard: panel '{panelGO.name}' is inside placecard! Removing it now.");
-		
-		// Get correct parent
-		var correctParent = PickRightClickPanelParent();
-		if (correctParent == null)
+		var correctParent = GetCardInfoPanelParent();
+		if (correctParent == null) return;
+		if (!panelGO.transform.IsChildOf(correctParent))
 		{
-			var c = CreateAutoCanvas();
-			correctParent = c.GetComponent<RectTransform>();
+			if (debugLogs) Debug.LogWarning($"leftRightClickCard: rightClickPanel was under wrong parent, moving to '{correctParent.name}'");
+			panelGO.transform.SetParent(correctParent, false);
+			panelGO.transform.SetAsLastSibling();
 		}
-
-		// Move panel to correct parent
-		panelGO.transform.SetParent(correctParent, false);
-		panelGO.transform.SetAsLastSibling();
-		if (debugLogs) Debug.Log($"leftRightClickCard: moved panel out of placecard to '{correctParent.name}'");
 	}
 
-	// Find a suitable parent RectTransform for the right-click zoom panel.
-	// If rightClickPanelParent is assigned in Inspector, use it directly.
-	private RectTransform PickRightClickPanelParent()
+	private Canvas GetOrCreateGlobalCardZoomCanvas()
 	{
-		if (rightClickPanelParent != null)
+		if (_globalCardZoomCanvas != null && _globalCardZoomCanvas.gameObject.scene.IsValid())
+			return _globalCardZoomCanvas;
+
+		var existing = GameObject.Find(GlobalCardZoomCanvasName);
+		if (existing != null)
 		{
-			if (rightClickPanelParent.gameObject.scene.IsValid())
+			var canvas = existing.GetComponent<Canvas>();
+			if (canvas != null)
+			{
+				_globalCardZoomCanvas = canvas;
+				_globalCardZoomCanvasRT = canvas.GetComponent<RectTransform>();
+				return canvas;
+			}
+		}
+
+		var go = new GameObject(GlobalCardZoomCanvasName);
+		var canvasComp = go.AddComponent<Canvas>();
+		canvasComp.renderMode = RenderMode.ScreenSpaceOverlay;
+		go.AddComponent<CanvasScaler>();
+		go.AddComponent<GraphicRaycaster>();
+		_globalCardZoomCanvas = canvasComp;
+		_globalCardZoomCanvasRT = canvasComp.GetComponent<RectTransform>();
+		return canvasComp;
+	}
+
+	private RectTransform GetCardInfoPanelParent()
+	{
+		if (rightClickPanelParent != null && rightClickPanelParent.gameObject.scene.IsValid())
+		{
+			if (rightClickPanelParent.GetComponentInParent<placecard>() != null)
+			{
+				if (debugLogs) Debug.LogWarning("leftRightClickCard: rightClickPanelParent is under placecard and will be ignored");
+			}
+			else
 			{
 				return rightClickPanelParent;
 			}
-			if (debugLogs) Debug.LogWarning($"leftRightClickCard: assigned rightClickPanelParent '{rightClickPanelParent.name}' is not a valid scene object.");
 		}
 
-		// Prefer uiRoot if it's valid and not inside placecard
-		if (uiRoot != null && uiRoot.gameObject.scene.IsValid())
+		var globalCanvas = GetOrCreateGlobalCardZoomCanvas();
+		return globalCanvas.GetComponent<RectTransform>();
+	}
+
+	private GameObject CreateRightClickPanel(RectTransform parentRT)
+	{
+		if (parentRT == null)
 		{
-			if (uiRoot.GetComponentInParent<placecard>() == null)
-				return uiRoot;
+			parentRT = GetOrCreateGlobalCardZoomCanvas().GetComponent<RectTransform>();
 		}
 
-		var canvases = Resources.FindObjectsOfTypeAll<Canvas>();
-		for (int i = 0; i < canvases.Length; i++)
+		GameObject panelGO;
+		if (rightClickPanelPrefab != null)
 		{
-			var c = canvases[i];
-			if (c == null || !c.gameObject.scene.IsValid()) continue;
-			var canvasRT = c.GetComponent<RectTransform>();
-			if (canvasRT == null) continue;
-			if (canvasRT.GetComponentInParent<placecard>() != null) continue;
-			// prefer root canvases (no parent) first
-			if (c.transform.parent == null) return canvasRT;
+			panelGO = Instantiate(rightClickPanelPrefab, parentRT);
+			if (debugLogs) Debug.Log("leftRightClickCard: instantiated rightClickPanel prefab");
 		}
-
-		// fallback to any non-placecard canvas
-		for (int i = 0; i < canvases.Length; i++)
+		else
 		{
-			var c = canvases[i];
-			if (c == null || !c.gameObject.scene.IsValid()) continue;
-			var canvasRT = c.GetComponent<RectTransform>();
-			if (canvasRT == null) continue;
-			if (canvasRT.GetComponentInParent<placecard>() != null) continue;
-			return canvasRT;
+			panelGO = new GameObject("CardZoomPanel", typeof(RectTransform));
+			panelGO.transform.SetParent(parentRT, false);
+			var raw = panelGO.AddComponent<RawImage>();
+			raw.color = Color.white;
+			if (debugLogs) Debug.Log("leftRightClickCard: created CardZoomPanel GameObject");
 		}
 
-		// last resort: directly create a brand new standalone canvas
-		var standaloneCanvas = CreateAutoCanvas();
-		if (debugLogs) Debug.Log($"leftRightClickCard: created new standalone AutoCanvas for panel");
-		return standaloneCanvas.GetComponent<RectTransform>();
+		return panelGO;
+	}
+
+	private void PrepareRightClickPanel(GameObject panelGO)
+	{
+		if (panelGO == null) return;
+
+		var parentRT = GetCardInfoPanelParent();
+		panelGO.transform.SetParent(parentRT, false);
+		panelGO.transform.SetAsLastSibling();
+
+		var rt = panelGO.GetComponent<RectTransform>();
+		if (fullScreenRightClickPanel)
+		{
+			rt.anchorMin = Vector2.zero;
+			rt.anchorMax = Vector2.one;
+			rt.pivot = new Vector2(0.5f, 0.5f);
+			rt.offsetMin = Vector2.zero;
+			rt.offsetMax = Vector2.zero;
+		}
+		else
+		{
+			rt.anchorMin = new Vector2(0.5f, 0.5f);
+			rt.anchorMax = new Vector2(0.5f, 0.5f);
+			rt.pivot = new Vector2(0.5f, 0.5f);
+			rt.sizeDelta = generatedPanelSize;
+			rt.anchoredPosition = Vector2.zero;
+		}
+
+		var raw = panelGO.GetComponent<RawImage>();
+		if (raw == null)
+			raw = panelGO.AddComponent<RawImage>();
+
+		rightClickPanel = raw;
+		EnsurePanelVisible();
+		panelGO.SetActive(false);
 	}
 
 	private void EnsureClickableGraphicIfUI()
@@ -1549,7 +1600,7 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		cg.blocksRaycasts = true;
     
 		// Optional: center panel when opened
-		if (centerPanelOnOpen)
+		if (centerPanelOnOpen && !fullScreenRightClickPanel)
 		{
 			var rt = rightClickPanel.rectTransform;
 			rt.anchorMin = new Vector2(0.5f, 0.5f);
@@ -1574,59 +1625,6 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		return sb.ToString();
 	}
 
-	private void GenerateRightClickPanelIfNeeded()
-	{
-		if (rightClickPanel != null || !generatePanelIfMissing) return;
-
-		var parentRT = PickRightClickPanelParent();
-		if (parentRT == null)
-		{
-			EnsureUIRootAndCanvas();
-			parentRT = uiRoot != null ? uiRoot : CreateAutoCanvas().GetComponent<RectTransform>();
-		}
-
-		GameObject panelGO = null;
-		if (rightClickPanelPrefab != null)
-		{
-			panelGO = Instantiate(rightClickPanelPrefab, parentRT);
-			if (debugLogs) Debug.Log("leftRightClickCard: instantiated rightClickPanel from prefab");
-		}
-		else
-		{
-			panelGO = new GameObject("CardZoomPanel", typeof(RectTransform));
-			panelGO.transform.SetParent(parentRT, false);
-			var ri = panelGO.AddComponent<RawImage>();
-			ri.color = Color.white;
-		}
-
-		panelGO.transform.SetParent(parentRT, false);
-		panelGO.transform.SetAsLastSibling();
-		var rt = panelGO.GetComponent<RectTransform>();
-		rt.anchorMin = new Vector2(0.5f, 0.5f);
-		rt.anchorMax = new Vector2(0.5f, 0.5f);
-		rt.pivot = new Vector2(0.5f, 0.5f);
-		rt.sizeDelta = generatedPanelSize;
-		rt.anchoredPosition = Vector2.zero;
-
-		var riPanel = panelGO.GetComponent<RawImage>();
-	if (riPanel == null)
-	{
-		riPanel = panelGO.AddComponent<RawImage>();
-	}
-
-	// Try to assign tag if provided (may throw if tag not defined)
-	if (!string.IsNullOrEmpty(rightClickPanelTag))
-	{
-		try { panelGO.tag = rightClickPanelTag; }
-		catch (System.Exception ex) { if (debugLogs) Debug.LogWarning($"leftRightClickCard: failed to set tag '{rightClickPanelTag}' on generated panel: {ex.Message}"); }
-	}
-
-	// Assign and ensure visibility
-	rightClickPanel = riPanel;
-	EnsurePanelVisible();
-	panelGO.SetActive(false); // default closed until first toggle
-	if (debugLogs) Debug.Log("leftRightClickCard: generated rightClickPanel and set default inactive");
-	}
 
 	// --- Combat helpers ---
 	private IEnemyStatus GetEnemyStatusOrNull()
@@ -1679,7 +1677,12 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 			return;
 		}
 
-		if (!attackableOnLeftClick) return;
+		if (!attackableOnLeftClick || _hasAttackedThisTurn)
+		{
+			if (debugLogs) Debug.Log("leftRightClickCard: cannot enter attack mode because card already attacked this turn");
+			return;
+		}
+
 		_isAttackMode = true;
 		SetAttackModeFeedback(true);
 		if (debugLogs) Debug.Log("leftRightClickCard: attack mode enabled");
@@ -1690,6 +1693,18 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 		_isAttackMode = false;
 		SetAttackModeFeedback(false);
 		if (debugLogs) Debug.Log("leftRightClickCard: attack mode disabled");
+	}
+
+	public void ResetAttackUsageThisTurn()
+	{
+		_hasAttackedThisTurn = false;
+		attackableOnLeftClick = true;
+	}
+
+	public void MarkAttackUsedThisTurn()
+	{
+		_hasAttackedThisTurn = true;
+		attackableOnLeftClick = false;
 	}
 
 	// 提供一個便捷入口：在攻擊模式下，使用 selectedAttackDamage 執行攻擊（邏輯由 AttackLogic 提供）
@@ -1709,6 +1724,8 @@ public class leftRightClickCard : MonoBehaviour, IPointerClickHandler, IPointerD
 
 		var status = GetEnemyStatusOrNull();
 		var res = AttackLogic.PerformAttack(status, selectedAttackDamage, debugLogs);
+		_hasAttackedThisTurn = true;
+		attackableOnLeftClick = false;
 		ExitAttackMode(); // 預設攻擊後離開攻擊模式（可依需求調整）
 		return res;
 	}

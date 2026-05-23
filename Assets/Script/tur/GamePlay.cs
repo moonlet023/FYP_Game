@@ -644,6 +644,7 @@ public class GamePlay : MonoBehaviour
         playerBenchPlacedThisTurn = false;
         playerCommonSummonUsedThisTurn = false; // 重置每回合 common summon 使用
         ResetPlayerCardBattleStateToggleUsage();
+        ResetPlayerCardAttackUsage();
         ClearPlayerAce(); // 回合開始時清除玩家 Ace
         ClearPlayerAttackBuffs();
 
@@ -1177,6 +1178,16 @@ public class GamePlay : MonoBehaviour
             if (card == null) continue;
             if (!card.gameObject.scene.IsValid()) continue;
             card.ResetBattleStateToggleThisTurn();
+        }
+    }
+
+    private void ResetPlayerCardAttackUsage()
+    {
+        foreach (var card in Resources.FindObjectsOfTypeAll<leftRightClickCard>())
+        {
+            if (card == null) continue;
+            if (!card.gameObject.scene.IsValid()) continue;
+            card.ResetAttackUsageThisTurn();
         }
     }
 
