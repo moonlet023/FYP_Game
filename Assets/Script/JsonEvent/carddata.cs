@@ -53,8 +53,12 @@ public class CardData : MonoBehaviour
         if (!overrideFromCode)
         {
             json = new ReadJson();
-            // 設定欲讀取的 JSON 檔案路徑（請依你的專案路徑調整）
-            var jsonPath = Application.dataPath + "/json/card/card.json";
+            // 設定欲讀取的 JSON 檔案路徑（使用 StreamingAssets）
+            #if UNITY_EDITOR
+                var jsonPath = System.IO.Path.Combine(Application.dataPath, "StreamingAssets", "json", "card", "card.json");
+            #else
+                var jsonPath = System.IO.Path.Combine(Application.streamingAssetsPath, "json", "card", "card.json");
+            #endif
             json.SetPath(jsonPath);
 
             // 讀檔並套用到資料與 UI
@@ -328,7 +332,11 @@ public class CardData : MonoBehaviour
     private bool TryLoadCardByIdFromJson(string queryId, out Tur.CardData data)
     {
         data = null;
-        string jsonPath = Path.Combine(Application.dataPath, "json/card/card.json");
+        #if UNITY_EDITOR
+            string jsonPath = System.IO.Path.Combine(Application.dataPath, "StreamingAssets", "json", "card", "card.json");
+        #else
+            string jsonPath = System.IO.Path.Combine(Application.streamingAssetsPath, "json", "card", "card.json");
+        #endif
         if (!File.Exists(jsonPath))
             return false;
 
@@ -371,9 +379,33 @@ public class CardData : MonoBehaviour
             return;
 
         string normalized = projectRelativePath.Replace('\\', '/').Trim();
-        string fullPath = normalized.StartsWith("Assets/")
-            ? Path.Combine(Application.dataPath, normalized.Substring("Assets/".Length))
-            : Path.Combine(Application.dataPath, normalized);
+        string fullPath = null;
+
+        if (normalized.StartsWith("Assets/"))
+        {
+            string relativeAssetPath = normalized.Substring("Assets/".Length);
+            #if UNITY_EDITOR
+                string streamingPath = Path.Combine(Application.dataPath, "StreamingAssets", relativeAssetPath);
+                if (File.Exists(streamingPath))
+                    fullPath = streamingPath;
+                else
+                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+            #else
+                string streamingPath = Path.Combine(Application.streamingAssetsPath, relativeAssetPath);
+                if (File.Exists(streamingPath))
+                    fullPath = streamingPath;
+                else
+                    fullPath = Path.Combine(Application.dataPath, relativeAssetPath);
+            #endif
+        }
+        else
+        {
+            #if UNITY_EDITOR
+                fullPath = Path.Combine(Application.dataPath, normalized);
+            #else
+                fullPath = Path.Combine(Application.streamingAssetsPath, normalized);
+            #endif
+        }
 
         fullPath = fullPath.Replace('\\', '/');
         if (!File.Exists(fullPath))

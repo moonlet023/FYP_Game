@@ -44,7 +44,7 @@ public class DiscardSelectUI : MonoBehaviour
     [SerializeField] private GamePlay gamePlay;
 
     [Header("Data Source")]
-    [SerializeField] private string discardHandDataPath = "Assets/json/hand.json";
+    [SerializeField] private string discardHandDataPath;
 
     [Header("Discard Card Size")]
     [SerializeField] private bool useFixedCardAspect6x4By8x9 = true;
@@ -74,6 +74,13 @@ public class DiscardSelectUI : MonoBehaviour
 
     void Awake()
     {
+        // 初始化 discardHandDataPath 为 StreamingAssets 路径
+        #if UNITY_EDITOR
+            discardHandDataPath = System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "hand.json");
+        #else
+            discardHandDataPath = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "hand.json");
+        #endif
+
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
 

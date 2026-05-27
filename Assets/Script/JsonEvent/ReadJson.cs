@@ -43,6 +43,21 @@ public class ReadJson
     return JsonConvert.DeserializeObject<T>(json);
   }
 
+  // 反序列化（StreamingAssets 相容路徑：指定相對於 StreamingAssets 的路徑）
+  public static T LoadFromStreamingAssets<T>(string relativePath)
+  {
+    #if UNITY_EDITOR
+      // 在編輯器中，直接使用 Assets/StreamingAssets 路徑
+      var fullPath = Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", relativePath);
+    #else
+      // 在構建版本中，使用 Application.streamingAssetsPath
+      var fullPath = Path.Combine(UnityEngine.Application.streamingAssetsPath, relativePath);
+    #endif
+    
+    var json = File.ReadAllText(fullPath, Encoding.UTF8);
+    return JsonConvert.DeserializeObject<T>(json);
+  }
+
   // 反序列化（字串）
   public static T LoadFromText<T>(string json)
   {

@@ -18,7 +18,12 @@ public class DeckData
 
     public DeckData()
     {
-        path = "Assets/json/deck.json";
+        // 使用 StreamingAssets 路徑
+        #if UNITY_EDITOR
+            path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "deck.json");
+        #else
+            path = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "deck.json");
+        #endif
     }
 
      public void PrintDeckLog()

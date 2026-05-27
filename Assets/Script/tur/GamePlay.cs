@@ -458,11 +458,26 @@ public class GamePlay : MonoBehaviour
             return;
         }
 
-#pragma warning disable CS4014 // Because this call is not awaited, execution will continue before the call completes
-        InitializeGameState();
-#pragma warning restore CS4014
-
         setupCompleted = true;
+        StartCoroutine(InitializeGameStateCoroutine());
+    }
+
+    private IEnumerator InitializeGameStateCoroutine()
+    {
+        yield return StartCoroutine(InitializeGameStateAsync());
+    }
+
+    private IEnumerator InitializeGameStateAsync()
+    {
+        var task = InitializeGameState();
+        while (!task.IsCompleted)
+        {
+            yield return null;
+        }
+        if (task.IsFaulted)
+        {
+            Debug.LogError($"[GamePlay] InitializeGameState failed: {task.Exception}", this);
+        }
     }
 
     // 建立本局使用的 runtime 牌堆：若張數不足則以 01 補滿（測試用）
@@ -505,12 +520,16 @@ public class GamePlay : MonoBehaviour
 
         // 以 deck.json 作為「牌組清單」，每局複製到 runtime_deck.json 當作戰鬥中的可變牌堆
         // 若牌組不足 minCards，僅在 runtime 牌堆補 01（不回寫 deck.json）
-        var sourceDeckData = new DeckData(); // 預設 path: Assets/json/deck.json
+        var sourceDeckData = new DeckData(); // 預設 path: StreamingAssets/json/deck.json
         var sourceCards = sourceDeckData.LoadDeck();
         var runtimeSourceCards = BuildRuntimeDeckWithPadding(sourceDeckData, 20);
 
         deckData = new DeckData();
-        deckData.SetPath("Assets/json/runtime_deck.json");
+        #if UNITY_EDITOR
+            deckData.SetPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "runtime_deck.json"));
+        #else
+            deckData.SetPath(System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "runtime_deck.json"));
+        #endif
         deckData.SaveDeck(new List<string>(runtimeSourceCards));
         deckData.ShuffleDeck();
         handData = new HandData();
@@ -519,11 +538,19 @@ public class GamePlay : MonoBehaviour
         {
             // AI 也使用獨立的 runtime 牌堆
             aiDeck = new DeckData();
-            aiDeck.SetPath("Assets/json/ai_deck.json");
+            #if UNITY_EDITOR
+                aiDeck.SetPath(System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "ai_deck.json"));
+            #else
+                aiDeck.SetPath(System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "ai_deck.json"));
+            #endif
             aiDeck.SaveDeck(new List<string>(runtimeSourceCards));
             aiDeck.ShuffleDeck();                                   // AI 牌堆獨立洗牌
             aiHand = new HandData();
-            aiHand.path = "Assets/json/ai_hand.json";              // AI 手牌用獨立路徑
+            #if UNITY_EDITOR
+                aiHand.path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "ai_hand.json");
+            #else
+                aiHand.path = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "ai_hand.json");
+            #endif
             aiDeck.drawCard(aiHand, 7);                             // AI 初始抽 7 張（資料層）
         }
 
@@ -628,12 +655,23 @@ public class GamePlay : MonoBehaviour
 
         if (isplayerturn)
         {
-#pragma warning disable CS4014 // Because this call is not awaited, execution will continue before the call completes
-            StartPlayerTurn();
-#pragma warning restore CS4014
+            StartCoroutine(StartPlayerTurnCoroutine());
         }
         else
             StartCoroutine(StartAITurn());
+    }
+
+    private IEnumerator StartPlayerTurnCoroutine()
+    {
+        var task = StartPlayerTurn();
+        while (!task.IsCompleted)
+        {
+            yield return null;
+        }
+        if (task.IsFaulted)
+        {
+            Debug.LogError($"[GamePlay] StartPlayerTurn failed: {task.Exception}", this);
+        }
     }
 
     // 玩家回合開始：抽牌（資料 + 視覺）+ 頂牌進核心區，然後等待玩家輸入
@@ -2250,9 +2288,6 @@ public class GamePlay : MonoBehaviour
         if (playerAttackArea.Contains(defenderCardId))
             playerAttackArea.Remove(defenderCardId);
         AddCardToPlayerDiscard(defenderCardId);
-        return;
-
-        Debug.LogWarning($"[GamePlay] PerformAttack could not resolve defender status for {defenderCardId}");
     }
 
     /// <summary>

@@ -54,7 +54,12 @@ public class CardEvent : MonoBehaviour
         cardLookup.Clear();
         isLoaded = false;
 
-        var fullPath = Path.Combine(Application.dataPath, cardJsonRelativePath);
+        #if UNITY_EDITOR
+            var fullPath = System.IO.Path.Combine(Application.dataPath, "StreamingAssets", "json", "card", "card.json");
+        #else
+            var fullPath = System.IO.Path.Combine(Application.streamingAssetsPath, "json", "card", "card.json");
+        #endif
+        
         if (!File.Exists(fullPath))
         {
             Debug.LogWarning($"[CardEvent] LoadCardDatabase: 找不到卡片資料檔案 {fullPath}");

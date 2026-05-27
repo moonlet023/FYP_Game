@@ -16,7 +16,12 @@ public class HandData
     public List<string> Hand = new List<string>();
     public HandData()
     {
-        path = "Assets/json/hand.json";
+        // 使用 StreamingAssets 路徑
+        #if UNITY_EDITOR
+            path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "StreamingAssets", "json", "hand.json");
+        #else
+            path = System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "json", "hand.json");
+        #endif
     }
 
     public void PrintHandLog()
