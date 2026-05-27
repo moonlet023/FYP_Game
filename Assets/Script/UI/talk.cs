@@ -24,7 +24,7 @@ public class talk : MonoBehaviour, IPointerClickHandler
     [Tooltip("每多少次點擊會顯示額外隱藏文字（預設 100）")]
     public int clicksToTrigger = 100;
     [TextArea]
-    public string specialHiddenMessage = "你觸發了第 100 次隱藏文字！這是你的特別獎勵訊息。";
+    public string specialHiddenMessage = "73 65 63 72 65 74 20 6c 30 45 2b 28 36";
 
     [Header("顯卡顯示")]
     [Range(0f, 1f)]
